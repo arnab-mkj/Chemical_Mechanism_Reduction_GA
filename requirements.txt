@@ -1,0 +1,7 @@
+cantera
+numpy
+matplotlib
+pytest
+pyyaml
+scipy
+jupyter
