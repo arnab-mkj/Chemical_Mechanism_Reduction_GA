@@ -3,6 +3,7 @@ from ..operators.selection import Selection
 from ..operators.crossover import Crossover
 from ..operators.mutation import Mutation
 from .population import Population
+from ..utils.save_best_genome import save_genome_as_yaml
 
 class GeneticAlgorithm:
     def __init__(self, population_size, genome_length, crossover_rate=0.8, 
@@ -18,7 +19,7 @@ class GeneticAlgorithm:
         self.crossover = Crossover(crossover_rate)
         self.mutation = Mutation(mutation_rate)
 
-    def evolve(self, fitness_function):
+    def evolve(self, fitness_function, original_mechanism_path, output_directory):
         """Main evolution loop."""
         for generation in range(self.num_generations):
             # Evaluate fitness
@@ -32,6 +33,11 @@ class GeneticAlgorithm:
             print(f"Best Fitness: {stats['best_fitness']}")
             print(f"Mean Fitness: {stats['mean_fitness']}")
             print(f"Active Reactions (mean): {stats['active_reactions_mean']:.2f}\n")
+
+            # Save the best genome as a YAML file
+            best_genome, best_fitness = self.population.get_best_individual()
+            output_path = f"{output_directory}/reduced_mechanism_gen{generation+1}.yaml"
+            #save_genome_as_yaml(best_genome, original_mechanism_path, output_path)
 
             # Create new population
             new_population = []

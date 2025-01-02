@@ -8,6 +8,10 @@ def main():
     crossover_rate = 0.8
     mutation_rate = 0.1
     num_generations = 100
+    
+    # Paths for the mechanism files
+    original_mechanism_path = "E:/PPP_WS2024-25/ChemicalMechanismReduction/data/gri30.yaml" 
+    output_directory = "E:/PPP_WS2024-25/ChemicalMechanismReduction/data/output"  
 
     # Create GA instance
     ga = GeneticAlgorithm(
@@ -19,8 +23,11 @@ def main():
     )
 
     # Run evolution
-    best_genome, best_fitness = ga.evolve(evaluate_fitness)
-
+    best_genome, best_fitness = ga.evolve(fitness_function = evaluate_fitness,
+                                          original_mechanism_path=original_mechanism_path,
+                                          output_directory=output_directory) #gets the fitness score from fitness_function.py
+                   # and then passes to evolve in Genetic algo which then again passes to
+                   #evaluate_fitness in population to store them in an array for a particular population
     print(f"\nBest solution found:")
     print(f"Fitness: {best_fitness}")
     print(f"Number of active reactions: {sum(best_genome)}")
