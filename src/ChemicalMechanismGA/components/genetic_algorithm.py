@@ -19,11 +19,17 @@ class GeneticAlgorithm:
         self.crossover = Crossover(crossover_rate)
         self.mutation = Mutation(mutation_rate)
 
-    def evolve(self, fitness_function, original_mechanism_path, output_directory):
+    def evolve(self, fitness_function, original_mechanism_path, output_directory, reactor_type):
         """Main evolution loop."""
         for generation in range(self.num_generations):
-            # Evaluate fitness
-            self.population.evaluate_fitness(fitness_function)
+            # Evaluate fitness for the current population
+            self.population.evaluate_fitness(
+                lambda genome: fitness_function(
+                    genome=genome,
+                    original_mechanism_path=original_mechanism_path,
+                    reactor_type=reactor_type
+                )
+            )
 
             # Get statistics
             stats = self.population.get_statistics()
@@ -64,5 +70,12 @@ class GeneticAlgorithm:
             self.population.replace_population(np.array(new_population[:population_size]))
 
         # Final evaluation
-        self.population.evaluate_fitness(fitness_function)
+        self.population.evaluate_fitness(
+            lambda genome: fitness_function(
+                genome=genome,
+                original_mechanism_path=original_mechanism_path,
+                reactor_type=reactor_type
+            )
+        )
+        
         return self.population.get_best_individual()

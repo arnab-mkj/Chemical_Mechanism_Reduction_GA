@@ -22,4 +22,4 @@ src/ChemicalMechanismGA/operators/__pycache__/selection.cpython-312.pyc
 src/ChemicalMechanismGA/components/__pycache__/population.cpython-312.pyc
 src/ChemicalMechanismGA/components/__pycache__/genetic_algorithm.cpython-312.pyc
 src/ChemicalMechanismGA/operators/__pycache__/crossover.cpython-312.pyc
-src/ChemicalMechanismGA/components/simulation_runner.py
+
