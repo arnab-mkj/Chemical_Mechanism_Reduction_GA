@@ -30,13 +30,14 @@ class SimulationRunner:
         else:
             raise ValueError(f"Unsupported reactor type: {self.reactor_type}")
         
+        
     def run_simulation(self, end_time=1.0, time_step=1e-5):
         
         if self.reactor_type in ["batch", "constant_pressure"]:
             time = 0.0
             while time < end_time:
                 time = self.reactor_network.step()
-                print(f"Time: {time:.5f}, Temperature: {self.reactor.T:.2f} K")
+               # print(f"Time: {time:.5f}, Temperature: {self.reactor.T:.2f} K")
                 
         elif self.reactor_type == "1D_flame":
             self.flame.solve(loglevel=1, refine_grid=True)

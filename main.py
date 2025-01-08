@@ -8,11 +8,11 @@ import json
 
 def main():
     # Step 1: Initialize GA parameters
-    population_size = 10
+    population_size = 30
     genome_length = 325  # Number of reactions in GRI-Mech 3.0
     crossover_rate = 0.8
     mutation_rate = 0.1
-    num_generations = 3
+    num_generations = 100
     
     # Paths for the mechanism files
     original_mechanism_path = "E:/PPP_WS2024-25/ChemicalMechanismReduction/data/gri30.yaml" 
@@ -94,7 +94,7 @@ def main():
     print(f"Fitness history saved to: {fitness_history_path}")
     
     # Save species concentrations
-    species_concentrations_path = f"{output_directory}/species_concentrations.json"
+    species_concentrations_path = f"{output_directory}/mole_fractions.json"
     print(f"Species concentrations saved to: {species_concentrations_path}")
     
     

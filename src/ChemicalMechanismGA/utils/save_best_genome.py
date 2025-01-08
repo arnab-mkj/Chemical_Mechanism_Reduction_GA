@@ -1,27 +1,6 @@
 import cantera as ct
 import yaml
-from yaml import YAMLObject
-
-class ReactionYAMLObject(YAMLObject):
-    """
-    Custom YAMLObject for serializing Cantera Reaction objects.
-    """
-    yaml_tag = u'!Reaction'
-    yaml_loader = yaml.Loader
-    yaml_dumper = yaml.Dumper
-
-    def __init__(self, reaction):
-        self.reaction = reaction
-
-    @classmethod
-    def from_yaml(cls, loader, node):
-        # Not needed for this use case, but can be implemented if deserialization is required
-        raise NotImplementedError("Deserialization from YAML is not implemented.")
-
-    @classmethod
-    def to_yaml(cls, dumper, data):
-        # Serialize the reaction to a YAML string
-        return dumper.represent_scalar(cls.yaml_tag, data.reaction.to_yaml_string())
+import os
 
 def save_genome_as_yaml(genome, original_mechanism_path, output_path):
     """
@@ -47,6 +26,56 @@ def save_genome_as_yaml(genome, original_mechanism_path, output_path):
         reactions=reduced_reactions
     )
 
+    # Manually serialize reactions to YAML format
+    serialized_reactions = []
+    for reaction in reduced_reactions:
+        # Serialize the reaction manually
+        reaction_data = {
+            "equation": reaction.equation,
+            "type": reaction.reaction_type,
+        }
+
+        # Handle different rate types
+        if isinstance(reaction.rate, ct.ArrheniusRate):
+            reaction_data["rate-constant"] = {
+                "A": reaction.rate.pre_exponential_factor,
+                "b": reaction.rate.temperature_exponent,
+                "Ea": reaction.rate.activation_energy / 4184.0,  # Convert J/mol to kcal/mol
+            }
+        elif isinstance(reaction.rate, ct.LindemannRate):
+            reaction_data["low-P-rate-constant"] = {
+                "A": reaction.rate.low_rate.pre_exponential_factor,
+                "b": reaction.rate.low_rate.temperature_exponent,
+                "Ea": reaction.rate.low_rate.activation_energy / 4184.0,
+            }
+            if reaction.rate.high_rate:
+                reaction_data["high-P-rate-constant"] = {
+                    "A": reaction.rate.high_rate.pre_exponential_factor,
+                    "b": reaction.rate.high_rate.temperature_exponent,
+                    "Ea": reaction.rate.high_rate.activation_energy / 4184.0,
+                }
+        elif isinstance(reaction.rate, ct.TroeRate):
+            reaction_data["low-P-rate-constant"] = {
+                "A": reaction.rate.low_rate.pre_exponential_factor,
+                "b": reaction.rate.low_rate.temperature_exponent,
+                "Ea": reaction.rate.low_rate.activation_energy / 4184.0,
+            }
+            reaction_data["high-P-rate-constant"] = {
+                "A": reaction.rate.high_rate.pre_exponential_factor,
+                "b": reaction.rate.high_rate.temperature_exponent,
+                "Ea": reaction.rate.high_rate.activation_energy / 4184.0,
+            }
+            reaction_data["Troe"] = {
+                "A": reaction.rate.falloff_coeffs[0],
+                "T3": reaction.rate.falloff_coeffs[1],
+                "T1": reaction.rate.falloff_coeffs[2],
+                "T2": reaction.rate.falloff_coeffs[3] if len(reaction.rate.falloff_coeffs) > 3 else None,
+            }
+        else:
+            reaction_data["rate-constant"] = "Unsupported rate type"
+
+        serialized_reactions.append(reaction_data)
+
     # Convert the reduced mechanism to YAML format
     reduced_mechanism = {
         "phases": [
@@ -56,13 +85,15 @@ def save_genome_as_yaml(genome, original_mechanism_path, output_path):
                 "kinetics": "gas",
                 "elements": reduced_gas.element_names,
                 "species": [species.name for species in reduced_gas.species()],
-                "reactions": [reaction.to_yaml_string() for reaction in reduced_reactions],  # Use to_yaml_string()
+                "reactions": serialized_reactions,
             }
         ]
     }
+
+    # Ensure the output directory exists
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
     # Save the reduced mechanism to a YAML file
     with open(output_path, "w") as yaml_file:
         yaml.dump(reduced_mechanism, yaml_file, default_flow_style=False)
 
-    print(f"Reduced mechanism saved to {output_path}")
