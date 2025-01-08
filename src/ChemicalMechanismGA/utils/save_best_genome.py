@@ -56,7 +56,7 @@ def save_genome_as_yaml(genome, original_mechanism_path, output_path):
                 "kinetics": "gas",
                 "elements": reduced_gas.element_names,
                 "species": [species.name for species in reduced_gas.species()],
-                "reactions": [reaction.to_cti() for reaction in reduced_reactions],  # Use to_cti() as a fallback
+                "reactions": [reaction.to_yaml_string() for reaction in reduced_reactions],  # Use to_yaml_string()
             }
         ]
     }

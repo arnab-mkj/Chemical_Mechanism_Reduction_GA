@@ -35,7 +35,8 @@ class Population:
 
         return np.array(population)
 
-    def evaluate_fitness(self, fitness_function):
+
+    def evaluate_population_fitness(self, fitness_function):
         """
         Evaluate fitness for all individuals in the population.
 
@@ -44,6 +45,7 @@ class Population:
         """
         fitness_values = [fitness_function(genome) for genome in self.individuals]
         self.fitness_scores = np.array(fitness_values) # stores the fitness values
+
 
     def get_best_individual(self):
         """
@@ -58,6 +60,7 @@ class Population:
         best_idx = np.argmin(self.fitness_scores)
         return self.individuals[best_idx], self.fitness_scores[best_idx]
 
+
     def replace_population(self, new_individuals):
         """
         Replace the current population with new individuals.
@@ -71,6 +74,7 @@ class Population:
         self.individuals = new_individuals
         self.fitness_scores = None  # Reset fitness scores
 
+
     def get_individual(self, index):
         """
         Get individual at specified index.
@@ -83,6 +87,7 @@ class Population:
         """
         return self.individuals[index]
 
+
     def get_size(self):
         """
         Get population size.
@@ -91,6 +96,7 @@ class Population:
             int: Population size
         """
         return self.size
+
 
     def get_statistics(self):
         """

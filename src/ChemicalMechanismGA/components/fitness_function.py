@@ -3,6 +3,9 @@ import csv
 from .simulation_runner import SimulationRunner
 import os
 import numpy as np
+import json
+from ..utils.save_species_conc import save_mole_fractions_to_json, save_species_concentrations
+#from ..utils.hyperparameter_tuning import HyperparameterTuner
 
 
 def create_reduced_mechanism(genome, original_mechanism_path="gri30.yaml"):
@@ -57,75 +60,18 @@ def run_simulation_with_reduced_mechanism(reduced_mechanism, reactor_type="const
 
     # Step 4: Extract results
     results = runner.get_results()
+    results["species_names"] = reduced_mechanism.species_names
 
-    # Step 5: Save mole fractions to a CSV file
-    save_mole_fractions_to_csv(results, reduced_mechanism.species_names, generation)
+    # Step nope: Save mole fractions to a CSV file
+    #save_mole_fractions_to_json(results, reduced_mechanism.species_names, generation)
 
     return results
-
-
-def save_mole_fractions_to_csv(results, species_names, generation, filename="mole_fractions.csv"):
-    """
-    Save mole fractions to a CSV file.
-    
-    Parameters:
-        mole_fractions (dict): Mole fractions of species.
-        generation (int): Current generation number.
-        filename (str): Name of the CSV file.
-    """
-    try:
-        # Ensure the directory for the file exists
-        filename = "E:/PPP_WS2024-25/ChemicalMechanismReduction/data/output/mole_fractions.csv"
-        print(f"Saving mole fractions to: {filename}")
-        try:
-            os.makedirs(os.path.dirname(filename), exist_ok=True)
-            print(f"Directory created or already exists: {os.path.dirname(filename)}")
-        except Exception as e:
-            print(f"Error creating directory: {e}")
-            
-        mole_fractions = results.get("mole_fractions", None)
-        if mole_fractions is None:
-            raise ValueError("Mole fractions are missing in the results")
-        
-        # check if mole fractions are a numpy array
-        if not isinstance(mole_fractions, np.ndarray):
-            raise TypeError("Mole fractiosn must be a numpy.ndarray")
-            
-        # save mole fractions to csv
-        with open(filename, mode="a", newline="") as file:
-            writer = csv.writer(file)
-            if generation == 0:  # Write header only for the first generation
-                writer.writerow(["Generation"] + species_names)
-               
-            # Write mole fractions for the current generation
-            for mf in mole_fractions:
-                writer.writerow([generation] + list(mf))
-            print(f"Mole fractions saved successfully for generation {generation}.")
-    except Exception as e:
-        print(f"Error while saving mole fractions: {e}")
-        raise
-
-
-def calculate_fitness(results, target_temperature=1200.0):
-    """
-    Calculate the fitness score based on simulation results.
-    
-    Parameters:
-        results (dict): Simulation results (e.g., temperature, species mole fractions).
-        target_temperature (float): Target temperature for fitness evaluation.
-    
-    Returns:
-        float: Fitness score (lower is better).
-    """
-    # Example fitness calculation: minimize the difference from the target temperature
-    fitness = abs(results["temperature"] - target_temperature)
-    return fitness
 
 
 def evaluate_fitness(genome, original_mechanism_path="gri30.yaml", 
                      reactor_type="constant_pressure", 
                      generation=None,
-                     filename="mole_fraction.csv"):
+                     filename=None):
     """
     Evaluate the fitness of a genome by running a simulation with the reduced mechanism.
     
@@ -151,13 +97,15 @@ def evaluate_fitness(genome, original_mechanism_path="gri30.yaml",
         if "mole_fractions" not in results:
             raise KeyError("Mole fractions are missing from the simulation results")
         
-        #  Calculate the fitness score
-        #fitness = calculate_fitness(results)
-
         # step 4: Initialize the fitness evaluator
         fitness_evaluator = FitnessEvaluator(
-            target_temperature = 2000.0,
-            target_species={"CO2": 0.1, "H2O":0.2} #example species, change as necessary
+           target_temperature=2000.0,
+            target_species={"CO2": 0.1, "H2O": 0.2}, #example species, change as necessary
+            target_delay=1.0,
+            weight_temperature=1.0,
+            weight_species=1.5,
+            weight_ignition_delay=0.5,
+            difference_function="squared" 
         )
         fitness = fitness_evaluator.combined_fitness(results)
         print(f"Fitness Score for Generation {generation}: {fitness}")
@@ -167,10 +115,59 @@ def evaluate_fitness(genome, original_mechanism_path="gri30.yaml",
         print(f"Error during fitness evaluation: {e}")
         return 1e6  # Penalize invalid solutions
     
-    
+def run_generation(population, original_mechanism_path, reactor_type, generation,
+                   filename="mole_fractions.json", 
+                   species_filename="species_concentrations.json"):
+    """
+    Run a single generation of the genetic algorithm
 
+    Args:
+        population (list): List of genomes in the current generation
+        original_mechanism_path (str): Path to the original mechanism path
+        reactor_type (str): Type of reactor to be used
+        generation (int): current generation number
+        filename (str, optional):  Defaults to "mole_fractions.json".
+
+    Returns:
+        _type_: list: Fitness scores of the current generation
+    """
+
+    fitness_scores = []
+    best_fitness = float("inf")
+    best_results = None
+    best_species_names = None
+    
+    for genome in population:
+        fitness = evaluate_fitness(genome,
+                                   original_mechanism_path=original_mechanism_path,
+                                   reactor_type=reactor_type,
+                                   generation=generation,
+                                   filename=None
+                                   )
+        fitness_scores.append(fitness)
+        if fitness < best_fitness:
+            best_fitness = fitness
+            #run the simualtion again to getthe best results
+            reduced_mechanism = create_reduced_mechanism(genome, original_mechanism_path)
+            best_results = run_simulation_with_reduced_mechanism(
+                reduced_mechanism, reactor_type=reactor_type, generation=generation
+            )
+            best_species_names = reduced_mechanism.species_names
+     # save the mole fractions for the best genome of the generation
+    if best_results is not None:
+        save_mole_fractions_to_json(best_results, best_species_names, generation, filename)
+         
+         # Save species concentrations for selected species
+        save_species_concentrations(best_results, best_species_names, generation, species_filename)
+    
+    return fitness_scores
+        
+    
+    
 class FitnessEvaluator:
-    def __init__(self, target_temperature=2000.0, target_species=None):
+    def __init__(self, target_temperature=2000.0, target_species=None, target_delay=1.0,
+                 weight_temperature=1.0, weight_species=1.0, weight_ignition_delay=1.0,
+                 difference_function="absolute"):
         """
         Initialize the FitnessEvaluator with target values.
 
@@ -180,6 +177,21 @@ class FitnessEvaluator:
         """
         self.target_temperature = target_temperature
         self.target_species = target_species if target_species else {}
+        self.target_delay= target_delay
+        self.weight_temparature = weight_temperature
+        self.weight_species = weight_species
+        self.weight_ignition_delay = weight_ignition_delay
+        self.difference_function = difference_function
+        
+    def calculate_difference(self, actual, target):
+        if self.difference_function == "absolute":
+            return abs(actual - target)
+        elif self.difference_function == "squared":
+            return (actual - target) ** 2
+        elif self.difference_function == "relative":
+            return abs((actual - target) / target) if target != 0 else float("inf")
+        else:
+            raise ValueError(f"Unsupported difference function: {self.difference_function}")
 
     def temperature_fitness(self, results):
         """
@@ -206,31 +218,27 @@ class FitnessEvaluator:
         Returns:
             float: Fitness score (lower is better).
         """
-        mole_fractions = results.get("mole_fractions", {})
+        mole_fractions = results.get("mole_fractions", None)
+        if mole_fractions is None:
+            raise ValueError("Mole fractions missing in the results")
+        
+        species_name_to_index = {name: i for i, name in enumerate(results["species_names"])}
+        
         fitness = 0.0
         for species, target_fraction in self.target_species.items():
-            actual_fraction = mole_fractions.get(species, 0.0)
-            fitness += abs(actual_fraction - target_fraction)
-            print(f"Species Fitness for {species}: {abs(actual_fraction - target_fraction)} (Actual: {actual_fraction}, Target: {target_fraction})")
+            if species not in species_name_to_index:
+                print(f"Warning! species {species} not found in the mechanism.")
+                actual_fraction = 0.0
+            else:
+                actual_fraction = mole_fractions[species_name_to_index[species]]
+                
+            fitness += self.calculate_difference(actual_fraction, target_fraction)
+            print(f"Species Fitness for {species}: {self.calculate_difference(
+                actual_fraction, target_fraction)} (Actual: {actual_fraction}, Target: {target_fraction})")
         return fitness
 
-    def combined_fitness(self, results):
-        """
-        Combine temperature and species fitness into a single score.
-
-        Parameters:
-            results (dict): Simulation results containing temperature and mole fractions.
-
-        Returns:
-            float: Combined fitness score (lower is better).
-        """
-        temp_fitness = self.temperature_fitness(results)
-        species_fitness = self.species_fitness(results)
-        total_fitness = temp_fitness + species_fitness
-        print(f"Combined Fitness: {total_fitness}")
-        return total_fitness
     
-    def ignition_delay_fitness(self, results, target_delay=1.0):
+    def ignition_delay_fitness(self, results):
         """
     Calculate fitness based on the difference between actual and target ignition delay time.
 
@@ -242,6 +250,24 @@ class FitnessEvaluator:
         float: Fitness score (lower is better).
     """
         actual_delay = results.get("ignition_delay", 0.0)
-        fitness = abs(actual_delay - target_delay)
-        print(f"Ignition Delay Fitness: {fitness} (Actual: {actual_delay}, Target: {target_delay})")
+        fitness = self.calculate_difference(actual_delay, self.target_delay)
+        print(f"Ignition Delay Fitness: {fitness} (Actual: {actual_delay}, Target: {self.target_delay})")
         return fitness
+    
+    def combined_fitness(self, results):
+        """
+        Combine temperature and species fitness into a single score.
+
+        Parameters:
+            results (dict): Simulation results containing temperature and mole fractions.
+
+        Returns:
+            float: Combined fitness score (lower is better).
+        """
+        temp_fitness = self.temperature_fitness(results) * self.weight_temparature
+        species_fitness = self.species_fitness(results) * self.weight_species
+        ignition_fitness = self.ignition_delay_fitness(results) * self.weight_ignition_delay
+    
+        total_fitness = temp_fitness + species_fitness + ignition_fitness
+        print(f"Combined Fitness: {total_fitness}")
+        return total_fitness

@@ -23,11 +23,13 @@ class GeneticAlgorithm:
         """Main evolution loop."""
         for generation in range(self.num_generations):
             # Evaluate fitness for the current population
-            self.population.evaluate_fitness(
+            self.population.evaluate_population_fitness(
                 lambda genome: fitness_function(
                     genome=genome,
                     original_mechanism_path=original_mechanism_path,
-                    reactor_type=reactor_type
+                    reactor_type=reactor_type,
+                    generation=generation,
+                    filename=None
                 )
             )
 
@@ -70,7 +72,7 @@ class GeneticAlgorithm:
             self.population.replace_population(np.array(new_population[:population_size]))
 
         # Final evaluation
-        self.population.evaluate_fitness(
+        self.population.evaluate_population_fitness(
             lambda genome: fitness_function(
                 genome=genome,
                 original_mechanism_path=original_mechanism_path,
