@@ -24,12 +24,17 @@ def create_reduced_mechanism(genome, original_mechanism_path="gri30.yaml"):
     reduced_reactions = [
         reaction for i, reaction in enumerate(reactions) if genome[i] == 1
     ]
+    
+    if len(reduced_reactions) < 50:  # Arbitrary threshold
+        raise ValueError("Reduced mechanism has too few reactions")
+    
     reduced_mechanism = ct.Solution(
         thermo="IdealGas",
         kinetics="GasKinetics",
         species=gas.species(),
         reactions=reduced_reactions,
     )
+    print(f"Reduced mechanism created with {len(reduced_reactions)} reactions")
     return reduced_mechanism
 
 
@@ -46,26 +51,32 @@ def run_simulation_with_reduced_mechanism(reduced_mechanism, reactor_type="const
         dict: Simulation results (e.g., temperature, species mole fractions).
     """
     # Step 1: Initialize the SimulationRunner
-    runner = SimulationRunner(mechanism_path=None, reactor_type=reactor_type)
-    runner.gas = reduced_mechanism  # Use the reduced mechanism directly
+    try:
+        runner = SimulationRunner(mechanism_path=None, reactor_type=reactor_type)
+        runner.gas = reduced_mechanism  # Use the reduced mechanism directly
 
-    # Step 2: Set initial conditions
-    initial_temperature = 1000.0  # Initial temperature in Kelvin
-    initial_pressure = ct.one_atm  # Initial pressure in Pascals
-    initial_species = {"CH4": 1.0, "O2": 2.0, "N2": 7.52}  # Stoichiometric mixture
-    runner.set_initial_conditions(initial_temperature, initial_pressure, initial_species)
+        # Step 2: Set initial conditions
+        initial_temperature = 1000.0  # Initial temperature in Kelvin
+        initial_pressure = ct.one_atm  # Initial pressure in Pascals
+        initial_species = {"CH4": 1.0, "O2": 2.0, "N2": 7.52}  # Stoichiometric mixture
+        runner.set_initial_conditions(initial_temperature, initial_pressure, initial_species)
+        print(f"Initial conditions set: T={initial_temperature}, P={initial_pressure}, X={initial_species}")
+        
+        # Step 3: Run the simulation
+        runner.run_simulation(end_time=1.0, time_step=1e-5)
 
-    # Step 3: Run the simulation
-    runner.run_simulation(end_time=1.0, time_step=01e-5)
+        # Step 4: Extract results
+        results = runner.get_results()
+        results["species_names"] = reduced_mechanism.species_names
+        
+        print(f"Simulation results: {results}")
+        # Step nope: Save mole fractions to a CSV file
+        #save_mole_fractions_to_json(results, reduced_mechanism.species_names, generation)
 
-    # Step 4: Extract results
-    results = runner.get_results()
-    results["species_names"] = reduced_mechanism.species_names
-
-    # Step nope: Save mole fractions to a CSV file
-    #save_mole_fractions_to_json(results, reduced_mechanism.species_names, generation)
-
-    return results
+        return results
+    except Exception as e:
+        print(f"Error during simulation with reduced mechanism: {e}")
+        raise
 
 
 def evaluate_fitness(genome, original_mechanism_path="gri30.yaml", 
@@ -111,8 +122,8 @@ def evaluate_fitness(genome, original_mechanism_path="gri30.yaml",
         return fitness, results
 
     except Exception as e:
-        print(f"Error during fitness evaluation: {e}")
-        return 1e6  # Penalize invalid solutions
+        print(f"Error during fitness evaluation for genome {genome}: {e}")
+        return 1e6, None  # Penalize invalid solutions
     
 def run_generation(population, original_mechanism_path, 
                    reactor_type, 
@@ -139,7 +150,8 @@ def run_generation(population, original_mechanism_path,
     best_species_names = None
     
     for genome in population:
-        fitness, results = evaluate_fitness(genome,
+        fitness, results = evaluate_fitness(
+                            genome,
                             original_mechanism_path=original_mechanism_path,
                             reactor_type=reactor_type,
                             generation=generation,
@@ -154,11 +166,11 @@ def run_generation(population, original_mechanism_path,
             best_results = results # results from evaluate fitness
             
             best_species_names = results["species_names"]
-     # save the mole fractions for the best genome of the generation
-    if best_results is not None:
-        save_mole_fractions_to_json(best_results, best_species_names, generation, filename)
-         
-         # Save species concentrations for selected species
+            
+     # save the mole fractions for the best genome of the generation and validation
+    if best_results is not None and "mole_fractions" in best_results:
+        save_mole_fractions_to_json(best_results, best_species_names, generation, filename) 
+        # Save species concentrations for selected species
         save_species_concentrations(best_results, best_species_names, generation, species_filename)
     
     return fitness_scores
@@ -181,7 +193,7 @@ class FitnessEvaluator:
         self.target_temperature = target_temperature
         self.target_species = target_species if target_species else {}
         self.target_delay= target_delay
-        self.weight_temparature = weight_temperature
+        self.weight_temperature = weight_temperature
         self.weight_species = weight_species
         self.weight_ignition_delay = weight_ignition_delay
         self.difference_function = difference_function
@@ -238,6 +250,7 @@ class FitnessEvaluator:
             fitness += self.calculate_difference(actual_fraction, target_fraction)
             print(f"Species Fitness for {species}: {self.calculate_difference(
                 actual_fraction, target_fraction)} (Actual: {actual_fraction}, Target: {target_fraction})")
+        fitness /= len(self.target_species)
         return fitness
 
     
@@ -267,7 +280,7 @@ class FitnessEvaluator:
         Returns:
             float: Combined fitness score (lower is better).
         """
-        temp_fitness = self.temperature_fitness(results) * self.weight_temparature
+        temp_fitness = self.temperature_fitness(results) * self.weight_temperature
         species_fitness = self.species_fitness(results) * self.weight_species
         ignition_fitness = self.ignition_delay_fitness(results) * self.weight_ignition_delay
     

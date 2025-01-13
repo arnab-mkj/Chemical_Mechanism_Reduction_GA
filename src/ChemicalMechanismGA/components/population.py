@@ -41,10 +41,19 @@ class Population:
         Evaluate fitness for all individuals in the population.
 
         Args:
-            fitness_function (callable): Function to evaluate fitness
+        fitness_function (callable): Function to evaluate fitness
         """
-        fitness_values = [fitness_function(genome)[0] for genome in self.individuals]
-        self.fitness_scores = np.array(fitness_values) # stores the fitness values
+        fitness_values = []
+        for genome in self.individuals:
+            try:
+                fitness_result = fitness_function(genome)
+                if not isinstance(fitness_result, tuple) or len(fitness_result) != 2:
+                    raise ValueError(f"Fitness function did not return a valid tuple for genome {genome}: {fitness_result}")
+                fitness_values.append(fitness_result[0])  # Extract the fitness score
+            except Exception as e:
+                print(f"Error evaluating fitness for genome: {e}")
+                fitness_values.append(1e6)  # Penalize invalid solutions
+        self.fitness_scores = np.array(fitness_values)  # Store the fitness values
 
 
     def get_best_individual(self):

@@ -47,7 +47,7 @@ class GRI30Analyzer:
 
 def main():
  
-    gri30_file_path = 'gri30.yaml'  # Change this to your actual file path
+    gri30_file_path = 'data/output/best_reduced_mechanism.yaml'  # Change this to your actual file path
     analyzer = GRI30Analyzer(gri30_file_path)
 
     analyzer.analyze()

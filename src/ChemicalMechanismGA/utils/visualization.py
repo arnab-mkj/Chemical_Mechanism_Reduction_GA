@@ -41,7 +41,5 @@ class RealTimePlotter:
         plt.pause(0.01)
 
     def show(self):
-        """
-        Display the final plot.
-        """
+        
         plt.show()

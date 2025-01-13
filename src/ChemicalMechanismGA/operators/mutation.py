@@ -5,11 +5,13 @@ class Mutation:
         self.mutation_rate = mutation_rate
         
     def bit_flip_mutation(self, genome):
-        mutated_genome = genome.copy()
-        for i in range(len(mutated_genome)):
+        min_active_reactions = 50
+        for i in range(len(genome)):
             if np.random.rand() < self.mutation_rate:
-                mutated_genome[i] = 1 - mutated_genome[i]
-        return mutated_genome
+                genome[i] = 1 - genome[i]
+        if sum(genome) < min_active_reactions:
+            genome[np.random.choice(len(genome))] = 1  # Reactivate a random reaction
+        return genome
     
     def swap_pos_mutation(self, genome):
         mutated_genome = genome.copy()

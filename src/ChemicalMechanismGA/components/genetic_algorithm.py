@@ -24,6 +24,8 @@ class GeneticAlgorithm:
 
     def evolve(self, fitness_function, original_mechanism_path, output_directory, reactor_type):
         """Main evolution loop."""
+        #best_results = None  # To store the best simulation results
+        
         for generation in range(self.num_generations):
             # Evaluate fitness for the current population
             self.population.evaluate_population_fitness(
@@ -49,6 +51,7 @@ class GeneticAlgorithm:
 
             # Save the best genome as a YAML file
             best_genome, best_fitness = self.population.get_best_individual()
+            
             output_path = f"{output_directory}/reduced_mechanism_gen{generation+1}.yaml"
             #save_genome_as_yaml(best_genome, original_mechanism_path, output_path)
 
@@ -77,13 +80,15 @@ class GeneticAlgorithm:
             self.population.replace_population(np.array(new_population[:population_size]))
 
         # Final evaluation
+        print("Starting final evaluation of the population...")
         self.population.evaluate_population_fitness(
             lambda genome: fitness_function(
                 genome=genome,
                 original_mechanism_path=original_mechanism_path,
                 reactor_type=reactor_type
-            )
+            ) #extracts only the fitness funtions
         )
+        print("Final evaluation completed.")
         
         self.plotter.show()
         
