@@ -1,9 +1,10 @@
 import numpy as np
-from ..operators.selection import Selection
-from ..operators.crossover import Crossover
-from ..operators.mutation import Mutation
-from .population import Population
-from ..utils.save_best_genome import save_genome_as_yaml
+from src.ChemicalMechanismGA.operators.selection import Selection
+from src.ChemicalMechanismGA.operators.crossover import Crossover
+from src.ChemicalMechanismGA.operators.mutation import Mutation
+from src.ChemicalMechanismGA.components.population import Population
+from src.ChemicalMechanismGA.utils.save_best_genome import save_genome_as_yaml
+from src.ChemicalMechanismGA.utils.visualization import RealTimePlotter    
 
 class GeneticAlgorithm:
     def __init__(self, population_size, genome_length, crossover_rate=0.8, 
@@ -18,6 +19,8 @@ class GeneticAlgorithm:
         self.selection = Selection()
         self.crossover = Crossover(crossover_rate)
         self.mutation = Mutation(mutation_rate)
+        
+        self.plotter = RealTimePlotter()
 
     def evolve(self, fitness_function, original_mechanism_path, output_directory, reactor_type):
         """Main evolution loop."""
@@ -41,6 +44,8 @@ class GeneticAlgorithm:
             print(f"Best Fitness: {stats['best_fitness']}")
             print(f"Mean Fitness: {stats['mean_fitness']}")
             print(f"Active Reactions (mean): {stats['active_reactions_mean']:.2f}\n")
+            
+            self.plotter.update(generation, stats)
 
             # Save the best genome as a YAML file
             best_genome, best_fitness = self.population.get_best_individual()
@@ -79,5 +84,7 @@ class GeneticAlgorithm:
                 reactor_type=reactor_type
             )
         )
+        
+        self.plotter.show()
         
         return self.population.get_best_individual()

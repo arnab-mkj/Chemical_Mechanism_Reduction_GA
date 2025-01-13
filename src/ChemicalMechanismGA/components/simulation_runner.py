@@ -23,6 +23,7 @@ class SimulationRunner:
             self.reactor = ct.IdealGasConstPressureReactor(self.gas)
             self.reactor_network = ct.ReactorNet([self.reactor])
             
+            
         elif self.reactor_type == "1D-flame":
             self.flame = ct.FreeFlame(self.gas)
             self.flame.set_initial_guess()  # ???????????
@@ -35,6 +36,8 @@ class SimulationRunner:
         
         if self.reactor_type in ["batch", "constant_pressure"]:
             time = 0.0
+            self.reactor_network.rtol = 1e-6  # Relative tolerance
+            self.reactor_network.atol = 1e-15  # Absolute tolerance
             while time < end_time:
                 time = self.reactor_network.step()
                # print(f"Time: {time:.5f}, Temperature: {self.reactor.T:.2f} K")

@@ -52,11 +52,11 @@ def run_simulation_with_reduced_mechanism(reduced_mechanism, reactor_type="const
     # Step 2: Set initial conditions
     initial_temperature = 1000.0  # Initial temperature in Kelvin
     initial_pressure = ct.one_atm  # Initial pressure in Pascals
-    initial_species = {"CH4": 1.0, "O2": 3.0, "N2": 3.76}  # Stoichiometric mixture
+    initial_species = {"CH4": 1.0, "O2": 2.0, "N2": 7.52}  # Stoichiometric mixture
     runner.set_initial_conditions(initial_temperature, initial_pressure, initial_species)
 
     # Step 3: Run the simulation
-    runner.run_simulation(end_time=10.0, time_step=0.5)
+    runner.run_simulation(end_time=1.0, time_step=01e-5)
 
     # Step 4: Extract results
     results = runner.get_results()
@@ -72,8 +72,7 @@ def evaluate_fitness(genome, original_mechanism_path="gri30.yaml",
                      reactor_type="constant_pressure", 
                      generation=None,
                      filename=None):
-    """
-    Evaluate the fitness of a genome by running a simulation with the reduced mechanism.
+    """Evaluate the fitness of a genome by running a simulation with the reduced mechanism.
     
     Parameters:
         genome (list): Binary genome representing active reactions.
@@ -109,13 +108,15 @@ def evaluate_fitness(genome, original_mechanism_path="gri30.yaml",
         )
         fitness = fitness_evaluator.combined_fitness(results)
         print(f"Fitness Score for Generation {generation}: {fitness}")
-        return fitness
+        return fitness, results
 
     except Exception as e:
         print(f"Error during fitness evaluation: {e}")
         return 1e6  # Penalize invalid solutions
     
-def run_generation(population, original_mechanism_path, reactor_type, generation,
+def run_generation(population, original_mechanism_path, 
+                   reactor_type, 
+                   generation,
                    filename="mole_fractions.json", 
                    species_filename="species_concentrations.json"):
     """
@@ -138,21 +139,21 @@ def run_generation(population, original_mechanism_path, reactor_type, generation
     best_species_names = None
     
     for genome in population:
-        fitness = evaluate_fitness(genome,
-                                   original_mechanism_path=original_mechanism_path,
-                                   reactor_type=reactor_type,
-                                   generation=generation,
-                                   filename=None
-                                   )
+        fitness, results = evaluate_fitness(genome,
+                            original_mechanism_path=original_mechanism_path,
+                            reactor_type=reactor_type,
+                            generation=generation,
+                            filename=None)
+        
         fitness_scores.append(fitness)
+        
+        # Update best results if this genome is better
         if fitness < best_fitness:
             best_fitness = fitness
-            #run the simualtion again to getthe best results
-            reduced_mechanism = create_reduced_mechanism(genome, original_mechanism_path)
-            best_results = run_simulation_with_reduced_mechanism(
-                reduced_mechanism, reactor_type=reactor_type, generation=generation
-            )
-            best_species_names = reduced_mechanism.species_names
+
+            best_results = results # results from evaluate fitness
+            
+            best_species_names = results["species_names"]
      # save the mole fractions for the best genome of the generation
     if best_results is not None:
         save_mole_fractions_to_json(best_results, best_species_names, generation, filename)
@@ -162,7 +163,9 @@ def run_generation(population, original_mechanism_path, reactor_type, generation
     
     return fitness_scores
         
-    
+def validate_reduced_mechanism(reduced_mechanism):
+    if len(reduced_mechanism.reactions()) < 50:  # Arbitrary threshold
+        raise ValueError("Reduced mechanism has too few reactions")   
     
 class FitnessEvaluator:
     def __init__(self, target_temperature=2000.0, target_species=None, target_delay=1.0,

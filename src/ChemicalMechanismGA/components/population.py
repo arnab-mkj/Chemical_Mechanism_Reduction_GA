@@ -43,7 +43,7 @@ class Population:
         Args:
             fitness_function (callable): Function to evaluate fitness
         """
-        fitness_values = [fitness_function(genome) for genome in self.individuals]
+        fitness_values = [fitness_function(genome)[0] for genome in self.individuals]
         self.fitness_scores = np.array(fitness_values) # stores the fitness values
 
 
