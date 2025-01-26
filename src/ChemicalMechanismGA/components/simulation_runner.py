@@ -48,8 +48,8 @@ class SimulationRunner:
             }
             while time < end_time:
                 time += time_step
-                self.reactor_network.advance(time)
-                #time = self.reactor_network.step()
+                #self.reactor_network.advance(time)
+                time = self.reactor_network.step()
                 # print(f"Time: {time:.5f}, Temperature: {self.reactor.T:.2f} K")
                 # Store time history
                 time_history["time"].append(time)

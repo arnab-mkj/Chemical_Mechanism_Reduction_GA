@@ -8,11 +8,12 @@ import json
 
 def main():
     # Step 1: Initialize GA parameters
-    population_size = 30
+    population_size = 50
     genome_length = 325  # Number of reactions in GRI-Mech 3.0
     crossover_rate = 0.8
-    mutation_rate = 0.1
-    num_generations = 100
+    mutation_rate = 0.01
+    num_generations = 500
+    elite_size = 2
     
     # Paths for the mechanism files
     original_mechanism_path = "E:/PPP_WS2024-25/ChemicalMechanismReduction/data/gri30.yaml" 
@@ -55,7 +56,8 @@ def main():
         weight_temperature=1.0,  # Default weight for temperature fitness
         weight_species=1.0,  # Default weight for species fitness
         weight_ignition_delay=1.0,  # Default weight for ignition delay fitness
-        difference_function="absolute"  # Default difference function
+        difference_function="logarithmic",  # Default difference function
+        sharpening_factor = 10.0 # empirical value
     )
     
     # Step 3: Create GA instance
@@ -64,7 +66,8 @@ def main():
         genome_length=genome_length,
         crossover_rate=crossover_rate,
         mutation_rate=mutation_rate,
-        num_generations=num_generations
+        num_generations=num_generations,
+        elite_size=elite_size
     )
 
     # Step 4: Run the GEnetic Algorithm

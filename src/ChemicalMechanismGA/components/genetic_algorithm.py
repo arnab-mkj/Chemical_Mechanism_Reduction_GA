@@ -8,9 +8,10 @@ from src.ChemicalMechanismGA.utils.visualization import RealTimePlotter
 
 class GeneticAlgorithm:
     def __init__(self, population_size, genome_length, crossover_rate=0.8, 
-                 mutation_rate=0.1, num_generations=100):
+                 mutation_rate=0.1, num_generations=100, elite_size = 2):
         self.num_generations = num_generations
         self.fitness_history = []
+        self.elite_size = elite_size
 
         # Initialize population
         self.population = Population(population_size, genome_length)
@@ -22,9 +23,12 @@ class GeneticAlgorithm:
         
         self.plotter = RealTimePlotter()
 
-    def evolve(self, fitness_function, original_mechanism_path, output_directory, reactor_type):
+    def evolve(self, fitness_function, original_mechanism_path, output_directory, reactor_type, selected_plots):
         """Main evolution loop."""
         #best_results = None  # To store the best simulation results
+        if not isinstance(selected_plots, list):
+            raise ValueError("selected_plots must be a list of plot options")
+
         
         for generation in range(self.num_generations):
             # Evaluate fitness for the current population
@@ -47,7 +51,7 @@ class GeneticAlgorithm:
             print(f"Mean Fitness: {stats['mean_fitness']}")
             print(f"Active Reactions (mean): {stats['active_reactions_mean']:.2f}\n")
             
-            self.plotter.update(generation, stats)
+            self.plotter.update(generation, stats, selected_plots)
 
             # Save the best genome as a YAML file
             best_genome, best_fitness = self.population.get_best_individual()
@@ -58,7 +62,12 @@ class GeneticAlgorithm:
             # Create new population
             new_population = []
             population_size = self.population.get_size()
+            
+            # get the elite individuals
+            elite_individuals = self.get_elite_individuals()
+            new_population.extend(elite_individuals)
 
+            # Now fill the rest of the population through selection and variation
             for _ in range(population_size // 2):
                 # Select parents
                 parent1_idx = self.selection.tournament_selection(self.population.fitness_scores)
@@ -93,3 +102,18 @@ class GeneticAlgorithm:
         self.plotter.show()
         
         return self.population.get_best_individual()
+    
+    def get_elite_individuals(self):
+        
+        individuals = []
+        for i in range(self.population.get_size()):
+            individuals.append((
+                self.population.get_individual(i),
+                self.population.fitness_scores[i]
+            ))
+        # Sort by fitness (lower is better)
+        sorted_individuals = sorted(individuals, key=lambda x: x[1])
+        
+        # Return thr best individuals(just the genomes, not the fitness scores)
+        return [ind[0] for ind in sorted_individuals[:self.elite_size]]
+        

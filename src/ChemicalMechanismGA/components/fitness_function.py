@@ -2,6 +2,7 @@ import cantera as ct
 import csv
 from .simulation_runner import SimulationRunner
 import os
+import math
 import numpy as np
 import json
 from ..utils.save_species_conc import save_mole_fractions_to_json, save_species_concentrations
@@ -38,7 +39,7 @@ def create_reduced_mechanism(genome, original_mechanism_path="gri30.yaml"):
     return reduced_mechanism
 
 
-def run_simulation_with_reduced_mechanism(reduced_mechanism, reactor_type="constant_pressure", generation=None):
+def run_simulation_with_reduced_mechanism(reduced_mechanism, reactor_type, generation, initial_temperature, initial_pressure):
     """
     Run a simulation using the reduced mechanism and save mole fractions.
     
@@ -56,8 +57,7 @@ def run_simulation_with_reduced_mechanism(reduced_mechanism, reactor_type="const
         runner.gas = reduced_mechanism  # Use the reduced mechanism directly
 
         # Step 2: Set initial conditions
-        initial_temperature = 1000.0  # Initial temperature in Kelvin
-        initial_pressure = ct.one_atm  # Initial pressure in Pascals
+        
         initial_species = {"CH4": 1.0, "O2": 2.0, "N2": 7.52}  # Stoichiometric mixture
         runner.set_initial_conditions(initial_temperature, initial_pressure, initial_species)
         print(f"Initial conditions set: T={initial_temperature}, P={initial_pressure}, X={initial_species}")
@@ -67,7 +67,18 @@ def run_simulation_with_reduced_mechanism(reduced_mechanism, reactor_type="const
 
         # Step 4: Extract results
         results = runner.get_results()
+        print("Simulation results:", results)  # Debug print
+        
+        # Check if mole_fractions exist in results
+        if "mole_fractions" not in results:
+            print("Warning: 'mole_fractions' not found in results. Adding empty mole fractions.")
+            results["mole_fractions"] = {}  # Add an empty dictionary as a fallback
+        
         results["species_names"] = reduced_mechanism.species_names
+        
+        # Save mole fractions for selected species
+        mole_fractions = {species: results["mole_fractions"][i] for i, species in enumerate(results["species_names"])}
+        results["mole_fractions"] = mole_fractions
         
         print(f"Simulation results: {results}")
         # Step nope: Save mole fractions to a CSV file
@@ -81,6 +92,8 @@ def run_simulation_with_reduced_mechanism(reduced_mechanism, reactor_type="const
 
 def evaluate_fitness(genome, original_mechanism_path="gri30.yaml", 
                      reactor_type="constant_pressure", 
+                     initial_temperature=None,
+                     initial_pressure=None,
                      generation=None,
                      filename=None):
     """Evaluate the fitness of a genome by running a simulation with the reduced mechanism.
@@ -99,23 +112,30 @@ def evaluate_fitness(genome, original_mechanism_path="gri30.yaml",
         reduced_mechanism = create_reduced_mechanism(genome, original_mechanism_path)
 
         # Step 2: Run the simulation
-        results = run_simulation_with_reduced_mechanism(reduced_mechanism, reactor_type, generation)
+        results = run_simulation_with_reduced_mechanism(reduced_mechanism, 
+                                                        reactor_type, 
+                                                        generation, 
+                                                        initial_temperature=initial_temperature, 
+                                                        initial_pressure=initial_pressure 
+                                                        )
 
-        print(f"Simulaiton results for Generation {generation}: {results}")
+        print(f"Simulation results for Generation {generation}: {results}")
         
         # step 3: check for mole fractions
         if "mole_fractions" not in results:
             raise KeyError("Mole fractions are missing from the simulation results")
+            
         
         # step 4: Initialize the fitness evaluator
         fitness_evaluator = FitnessEvaluator(
            target_temperature=2000.0,
-            target_species={"CO2": 0.1, "H2O": 0.2}, #example species, change as necessary
+            target_species={"CO2": 0.1, "H2O": 0.2, "OH": 0.05, "H": 0.01}, #example species, change as necessary
             target_delay=1.0,
             weight_temperature=1.0,
             weight_species=1.5,
             weight_ignition_delay=0.5,
-            difference_function="squared" 
+            difference_function="logarithmic",
+            sharpening_factor = 10.0
         )
         fitness = fitness_evaluator.combined_fitness(results)
         print(f"Fitness Score for Generation {generation}: {fitness}")
@@ -128,6 +148,8 @@ def evaluate_fitness(genome, original_mechanism_path="gri30.yaml",
 def run_generation(population, original_mechanism_path, 
                    reactor_type, 
                    generation,
+                   initial_temperature,  # Add this parameter
+                   initial_pressure,
                    filename="mole_fractions.json", 
                    species_filename="species_concentrations.json"):
     """
@@ -154,6 +176,8 @@ def run_generation(population, original_mechanism_path,
                             genome,
                             original_mechanism_path=original_mechanism_path,
                             reactor_type=reactor_type,
+                            initial_temperature=initial_temperature,  # Pass initial_temperature
+                            initial_pressure=initial_pressure,
                             generation=generation,
                             filename=None)
         
@@ -162,9 +186,7 @@ def run_generation(population, original_mechanism_path,
         # Update best results if this genome is better
         if fitness < best_fitness:
             best_fitness = fitness
-
             best_results = results # results from evaluate fitness
-            
             best_species_names = results["species_names"]
             
      # save the mole fractions for the best genome of the generation and validation
@@ -182,7 +204,7 @@ def validate_reduced_mechanism(reduced_mechanism):
 class FitnessEvaluator:
     def __init__(self, target_temperature=2000.0, target_species=None, target_delay=1.0,
                  weight_temperature=1.0, weight_species=1.0, weight_ignition_delay=1.0,
-                 difference_function="absolute"):
+                 difference_function="absolute", sharpening_factor = 10.0):
         """
         Initialize the FitnessEvaluator with target values.
 
@@ -197,6 +219,7 @@ class FitnessEvaluator:
         self.weight_species = weight_species
         self.weight_ignition_delay = weight_ignition_delay
         self.difference_function = difference_function
+        self.sharpening_factor = sharpening_factor
         
     def calculate_difference(self, actual, target):
         if self.difference_function == "absolute":
@@ -205,6 +228,10 @@ class FitnessEvaluator:
             return (actual - target) ** 2
         elif self.difference_function == "relative":
             return abs((actual - target) / target) if target != 0 else float("inf")
+        elif self.difference_function == "logarithmic":
+            return math.log(1 + self.sharpening_factor * abs((actual - target) / target)) if target != 0 else float("inf")
+        elif self.difference_function == "sigmoid":
+            return 1 / (1 + math.exp(self.sharpening_factor * (1 - actual / target))) if target != 0 else float("inf")
         else:
             raise ValueError(f"Unsupported difference function: {self.difference_function}")
 
@@ -219,7 +246,7 @@ class FitnessEvaluator:
             float: Fitness score (lower is better).
         """
         actual_temperature = results.get("temperature", 0.0)
-        fitness = abs(actual_temperature - self.target_temperature)
+        fitness = self.calculate_difference(actual_temperature, self.target_temperature)
         print(f"Temperature Fitness: {fitness} (Actual: {actual_temperature}, Target: {self.target_temperature})")
         return fitness
 
