@@ -32,3 +32,13 @@ src/ChemicalMechanismGA/components/__pycache__/fitness_function.cpython-312.pyc
 src/ChemicalMechanismGA/components/__pycache__/genetic_algorithm.cpython-312.pyc
 src/ChemicalMechanismGA/components/__pycache__/fitness_function.cpython-312.pyc
 src/ChemicalMechanismGA/components/__pycache__/genetic_algorithm.cpython-312.pyc
+tests\__pycache__
+src\ChemicalMechanismGA\__pycache__
+src\ChemicalMechanismGA\components\__pycache__
+flame_fixed_T.csv
+definitions.txt
+
+results
+PSR
+.vscode
+config

@@ -21,11 +21,11 @@ class RealTimePlotter:
         self.ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.1), ncol=3)
         self.ax.grid(color='gray', linestyle='--', linewidth=0.5)
         
-    def update(self, generation, stats, selected_plots):
+    def update(self, generation, stats, selected_plots=None):
         # Append new data
         self.generations.append(generation)
         self.best_fitness.append(stats['best_fitness'])
-        self.mean_fitness.append(stats['mean_fitness'])
+        #self.mean_fitness.append(stats['mean_fitness'])
         #self.worst_fitness.append(stats['worst_fitness'])
         
         def smooth(data, window_size=5):
@@ -33,16 +33,16 @@ class RealTimePlotter:
 
         # Update plot data
         self.best_line.set_data(self.generations, self.best_fitness)
-        self.mean_line.set_data(self.generations, self.mean_fitness)
+        #self.mean_line.set_data(self.generations, self.mean_fitness)
         #self.worst_line.set_data(self.generations, self.worst_fitness)
 
         # Adjust plot limits
         self.ax.set_xlim(0, max(self.generations) + 1)
-        self.ax.set_ylim(0, max(self.mean_fitness)+1)
+        self.ax.set_ylim(0, max(self.best_fitness))
         #self.ax.set_ylim(0, max(self.best_fitness + self.mean_fitness + self.worst_fitness))
         
         # Check if mole fractions should be plotted
-        if 'Mole Fractions' in selected_plots:
+        if selected_plots is not None and 'Mole Fractions' in selected_plots:
             self.plot_mole_fractions(stats['mole_fractions'])
             
         # Redraw the plot

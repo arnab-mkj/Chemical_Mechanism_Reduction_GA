@@ -32,7 +32,7 @@ class MechanismReductionApp:
         self.plot_options = {}
         self.create_plot_options()
 
-    def create_input_fields(self):
+    def create_input_fields(self):6
         # Population Size
         tk.Label(self.root, text="Population Size:").grid(row=0, column=0)
         self.population_size_entry = tk.Entry(self.root)
