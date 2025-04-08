@@ -1,7 +1,8 @@
 import numpy as np
+import cantera as ct
 
 class Population:
-    def __init__(self, popu_size, genome_length):
+    def __init__(self, popu_size, genome_length, species_def):
         """
         Initialize Population class.
 
@@ -11,9 +12,11 @@ class Population:
         """
         self.popu_size = popu_size
         self.genome_length = genome_length
+        self.species_def = species_def
         self.individuals = self.initialize_population()
+        
         #self.fitness_scores = None
-
+   
     def initialize_population(self):
         """
         Initialize population with all reactions active and slight diversity.
@@ -32,6 +35,7 @@ class Population:
                 if np.random.rand() < 0.1:  # 10% chance of deactivating reactions
                     genome[i] = 1 - genome[i]
             population.append(genome)
+        #print(f"The initial population: {population}")
 
         return np.array(population)
 
@@ -62,6 +66,7 @@ class Population:
             raise ValueError(f"New population size ({len(new_individuals)}) does not match required size ({self.size})")
 
         self.individuals = new_individuals
+        #print(f"new population: {list(self.individuals)}")
         self.fitness_scores = None  # Reset fitness scores
 
 

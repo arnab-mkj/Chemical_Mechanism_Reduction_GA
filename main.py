@@ -7,13 +7,20 @@ from src.ChemicalMechanismGA.components.simulation_runner import SimulationRunne
 import json
 import cantera as ct 
 
-
+"""
+    Todo: 
+          > Improve the visualization to plot lower values
+          > implement the burning velocity in PREMIX(optional)
+          > Implement sensitivity analysis
+          > Implement the third-body reaction mechanism (not needed, done by cantera)
+          > Mark definite species and their corresponding reaction
+"""
 def main():
     # Step 1: Initialize GA parameters
-    population_size = 30
+    population_size = 50
     genome_length = 325  # Number of reactions in GRI-Mech 3.0
     crossover_rate = 0.6
-    mutation_rate = 0.05
+    mutation_rate = 0.1
     num_generations = 500
     elite_size = 2
     
@@ -22,16 +29,14 @@ def main():
     output_directory = "E:/PPP_WS2024-25/ChemicalMechanismReduction/data/output"  
     
     # Reactor type
-    reactor_type = "PREMIX"  # Example: batch reactor
+    reactor_type = "constant_pressure"  # Example: batch reactor
   
-    target_species={"CO2":0.1, "H2O":0.1, "CH4":0.1, "O2":0.1, "N2":0.1} # Example target species mole fractions
-    target_delay=1.0  # Example target ignition delay
-    weight_temperature=1.0  # Default weight for temperature fitness
-    weight_species=1.0  # Default weight for species fitness
-    difference_function="logarithmic"  # Default difference function
-    sharpening_factor = 10.0 # empirical value
-    initial_temperature = 1000
-    initial_pressure = ct.one_atm
+    weights = {"temperature": 1, "species": 1, "ignition_delay": 1}
+    #weights = {"temperature": 0.5, "species": 0.5}
+    
+    difference_function = "logarithmic"  # Default difference function
+    sharpening_factor = 6 # empirical value
+    lam = 0.1
     #region
     # conditions_list = [
     #     # Condition 1: Lean flame (phi=0.8)
@@ -67,32 +72,23 @@ def main():
     #endregion
     condition = {
             'phi': 0.8,
-            'fuel': {'CH4': 1.0},
-            'oxidizer': {'O2': 0.21, 'N2': 0.79},
-            'pressure': ct.one_atm,
-            'temperature': 300.0,
-            'mass_flow_rate': 0.04
+            'fuel': {'CH4'}, #mole fraction
+            'oxidizer': {'O2': 0.1938, 'N2': 0.7287},
+            'pressure': 2670 * ct.one_atm / 101325, #* 0.0263, (20 torr)
+            'temperature': 1800.0,
+            'mass_flow_rate': 0.0989 #kg/m^2/s
         }
-    
+    species_def = ['CH4','O2','CO2','H2O','CO','H2','O','OH','H','CH3']
     fitness_evaluator = FitnessEvaluator(
         original_mechanism_path,
         reactor_type,
         condition,
-        weight_species,
+        weights,
         difference_function,
-        sharpening_factor
+        sharpening_factor,
+        lam
         )
-    #region
-    # population = Population(population_size, genome_length) # creating an instance of population
-    # initial_popu = population.initialize_population()
-
-    # fitness_score_init = fitness_evaluator.run_generation(initial_popu, 0)
-    # print(fitness_score)
-    
-    
-    # pass to evolve, evolve should pass to run gen
-    # exit()
-    #endregion
+  
     # Step 3: Create GA instance
     ga = GeneticAlgorithm(
         population_size,
@@ -101,7 +97,8 @@ def main():
         mutation_rate,
         num_generations,
         elite_size,
-        fitness_evaluator  # ????? needed?? check!!!!
+        fitness_evaluator,
+        species_def# ????? needed?? check!!!!
     )
 
     # Step 4: Run the GEnetic Algorithm
@@ -114,8 +111,7 @@ def main():
     print(f"\nBest solution found:")
     print(f"Fitness: {best_fitness}")
     print(f"Number of active reactions: {sum(best_genome)}")
-    
-    
+
     
     # Save the best genome as a reduced mechanism in YAML format
     output_path = f"{output_directory}/best_reduced_mechanism.yaml"

@@ -42,3 +42,9 @@ results
 PSR
 .vscode
 config
+src/ChemicalMechanismGA/components/__pycache__/fitness_function.cpython-312.pyc
+research/sensitivity.ipynb
+.gitignore
+src/ChemicalMechanismGA/components/__pycache__/genetic_algorithm.cpython-312.pyc
+src/ChemicalMechanismGA/components/__pycache__/population.cpython-312.pyc
+src/ChemicalMechanismGA/operators/__pycache__/mutation.cpython-312.pyc

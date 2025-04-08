@@ -1,5 +1,5 @@
 import cantera as ct
-import math
+
 import numpy as np
 import json
 import matplotlib.pyplot as plt
@@ -8,10 +8,12 @@ import os
 from scipy import integrate
 from src.ChemicalMechanismGA.components.simulation_runner import SimulationRunner
 from ..utils.save_species_conc import save_mole_fractions_to_json, save_species_concentrations
+from src.ChemicalMechanismGA.components.constant_pressure_fitness import ConstantPressureFitness
+from src.ChemicalMechanismGA.components.error_fitness import ConstantPressureError
 
 class FitnessEvaluator:
     def __init__(self, mech, reactor_type, condition,
-                 weight_species, difference_function, sharpening_factor):
+                 weights, difference_function, sharpening_factor, lam):
         """
         Initialize the FitnessEvaluator.
 
@@ -31,15 +33,20 @@ class FitnessEvaluator:
         """
         self.mech = mech
         self.reactor_type = reactor_type
-        
         self.condition = condition
-        #self.target_temperature = target_temperature
         
         self.difference_function = difference_function
         self.sharpening_factor = sharpening_factor
-       
-        self.weight_species = weight_species
-        #self.weight_ignition_delay = weight_ignition_delay
+        self.lam = lam
+        self.weights = weights
+        self.full_runner = SimulationRunner('gri30.yaml', self.reactor_type)
+        
+        # Create the fitness calculator based on reactor type
+        if reactor_type == "constant_pressure":
+            self.fitness_calculator = ConstantPressureError(self.difference_function, self.sharpening_factor, self.lam)
+        else:
+            raise ValueError(f"Unsupported reactor type: {reactor_type}")
+        
         #self.target_delay = target_delay
         
 
@@ -112,10 +119,18 @@ class FitnessEvaluator:
             # Step 1: Create the reduced mechanism
             reduced_mech = self.create_reduced_mechanism(genome)
             
+            try:
+                T = self.condition['temperature']
+                P = self.condition['pressure']
+                X = {**self.condition['fuel'], **self.condition['oxidizer']}
+                
+                reduced_mech.TPX = T, P, X
+                reduced_mech()               
+            except Exception as e:
+                print(f"Mechanism validation failed: {str(e)}")
+                print(f"Failed condition: T={T}, P={P}, X={X}")
+                return float('inf'), None
 
-            # Step 2: Run the simulation
-            #reduced_results = self.run_reduced_simulation(reduced_mech) # works till here
-            
             runner = SimulationRunner(reduced_mech, self.reactor_type)
             reduced_results = runner.run_simulation(self.condition) 
             print("Run simulation was called succesfully")
@@ -130,16 +145,26 @@ class FitnessEvaluator:
             except Exception as e:
                 print(f"Error in evaluating reduced mechanism species: {e}")
             
+            # Step 4: Run simulation with full mechanism
+            
+            full_results = self.full_runner.run_simulation(self.condition)
+            key_species = ['CH4', 'O2', 'CO2', 'H2O', 'CO', 'H2', 'O', 'OH', 'H', 'CH3']
+            
             # Step 4: Calculate fitness
-            #print("About to call premix fitness calcualtion")
+            print("About to call fitness calcualtion")
             epsilon=0
-            fitness = self.calculate_premix_fitness(species_reduced, reduced_results, epsilon)
+            fitness = self.fitness_calculator.combined_fitness(
+                reduced_results,
+                full_results,
+                key_species,
+                self.weights
+            )
             
             print(f"Fitness Score for Generation {generation}: {fitness}")
             return fitness, reduced_results
         
         except Exception as e:
-            print(f"Error during fitness evaluation for genome : {e}")
+            print(f"Error during fitness evaluation for genome : {e}") #!!!!!!!!!!!!!!!!!!
             return 1e6, None  # Penalize invalid solutions
 
     def run_generation(self, population, generation, save_top_n):
@@ -167,14 +192,12 @@ class FitnessEvaluator:
         # Access the individuals array from the Population object
         individuals = population.individuals # gets array of population
         print(f"Processing {len(individuals)} individuals in generation {generation}")
-        
-        start_time = time.time()
 
         for i, genome in enumerate(individuals): #goes through all the genomes(individuals)
             fitness, results = self.evaluate_fitness(genome, generation)
             
             fitness_scores.append(fitness)
-            print(f"Length of fitness_scores: {len(fitness_scores)}")
+            print(f"Genome Number: {len(fitness_scores)}")
             
             if results is not None:
                 #count active reactions
@@ -184,12 +207,6 @@ class FitnessEvaluator:
                 
                 max_temp = results.get("max_temperature", 0)
              
-                # # Track which species are used in the best mechanism
-                # if i < save_top_n:
-                #     for species in results.get("species_names", []):
-                #         species_usage[species] = species_usage.get(species, 0) + 1
-                        
-                #Store full results for top performers
                 result_entry= {
                     "fitness": fitness,
                     "reaction_count": reaction_count,
@@ -238,25 +255,7 @@ class FitnessEvaluator:
                     active_reactions = [i for i, active in enumerate(genome) if active]
                     f.write(f"Active reaction indices: {active_reactions}\n")
                     
-            # Generate summary statistics
-        generation_stats = {
-            "generation": generation,
-            "time_taken": time.time() - start_time,
-            "fitness": {
-                "min": min_fitness,
-                "max": max_fitness,
-                "avg": avg_fitness,
-                "std": std_fitness
-            },
-            "reactions": {
-                "min": min_reactions,
-                "max": max_reactions,
-                "avg": avg_reactions
-            },
-            "top_performers": all_results[:save_top_n],
-            "most_common_species": sorted(species_usage.items(), key=lambda x: x[1], reverse=True)[:20]
-        }
-        
+   
         
         # Convert numpy types to Python types
         def convert_numpy_types(obj):
@@ -269,55 +268,29 @@ class FitnessEvaluator:
             else:
                 raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
         
-        # Save generation statistics
-        with open(f"{base_dir}/generation_stats.json", 'w') as f:
-            json.dump(generation_stats, f, indent=2, default=convert_numpy_types)
+        # # Save generation statistics
+        # with open(f"{base_dir}/generation_stats.json", 'w') as f:
+        #     json.dump(generation_stats, f, indent=2, default=convert_numpy_types)
             
             # Plot fitness distribution
-        if len(fitness_scores) > 1:
-            plt.figure(figsize=(10, 6))
-            plt.hist(fitness_scores, bins=20, alpha=0.7)
-            plt.title(f"Fitness Distribution - Generation {generation}")
-            plt.xlabel("Fitness Score")
-            plt.ylabel("Count")
-            plt.savefig(f"{base_dir}/fitness_distribution.png")
-            plt.close()
+        # if len(fitness_scores) > 1:
+        #     plt.figure(figsize=(10, 6))
+        #     plt.hist(fitness_scores, bins=20, alpha=0.7)
+        #     plt.title(f"Fitness Distribution - Generation {generation}")
+        #     plt.xlabel("Fitness Score")
+        #     plt.ylabel("Count")
+        #     plt.savefig(f"{base_dir}/fitness_distribution.png")
+        #     plt.close()
 
-            # # Plot fitness vs reaction count
-            # plt.figure(figsize=(10, 6))
-            # plt.scatter(reaction_counts, fitness_scores, alpha=0.5)
-            # plt.title(f"Fitness vs Reaction Count - Generation {generation}")
-            # plt.xlabel("Number of Reactions")
-            # plt.ylabel("Fitness Score")
-            # plt.savefig(f"{base_dir}/fitness_vs_reactions.png")
-            # plt.show()
-            # plt.close()
-
-        # Print summary
-        print(f"\nGeneration {generation} completed in {time.time() - start_time:.2f} seconds")
-        print(f"Best fitness: {min_fitness:.6f}, Avg fitness: {avg_fitness:.6f}")
-        print(f"Reaction counts - Min: {min_reactions}, Avg: {avg_reactions:.1f}, Max: {max_reactions}")
-
+          
         return {
             "fitness_scores": fitness_scores,
             "best_genome": all_results[0]["genome"] if all_results else None,
-            "best_fitness": min_fitness
+            "best_fitness": min_fitness,
+            "active_reactions": min_reactions,
+            "average_reactions": avg_reactions
     }
                     
-
-    def calculate_difference(self, actual, target):
-        if self.difference_function == "absolute":
-            return abs(actual - target)
-        elif self.difference_function == "squared":
-            return (actual - target) ** 2
-        elif self.difference_function == "relative":
-            return abs((actual - target) / target) if target != 0 else float("inf")
-        elif self.difference_function == "logarithmic":
-            return math.log(1 + self.sharpening_factor * abs((actual - target) / target)) if target != 0 else float("inf")
-        elif self.difference_function == "sigmoid":
-            return 1 / (1 + math.exp(self.sharpening_factor * (1 - actual / target))) if target != 0 else float("inf")
-        else:
-            raise ValueError(f"Unsupported difference function: {self.difference_function}")
 
     def calculate_premix_fitness(self, species_reduced, reduced_results, epsilon):
         total_error = 0.0
@@ -331,16 +304,14 @@ class FitnessEvaluator:
         reduced_profiles = reduced_results
         #print(f"Full profiles for condition : {full_profiles}")
         #print(f"Reduced profiles for condition : {reduced_profiles}")
-         
-        
+
         if not isinstance(reduced_profiles, dict):
             raise ValueError(f"Expected reduced_profiles to be a dictionary, got {type(reduced_profiles)}")
         if not isinstance(full_profiles, dict):
             raise ValueError(f"Expected full_profiles to be a dictionary, got {type(full_profiles)}")
         
-        z = full_profiles['grid']
+        z = full_profiles['grid'] 
         #is_uniform_grid = np.allclose(np.diff(z), np.diff(z).mean())
-        
         
         condition_error = 0.0
         for k, species in enumerate(species_reduced):
@@ -378,106 +349,86 @@ class FitnessEvaluator:
                 
         return 1.0/(epsilon + total_error)
 
-# ALL previous fitness functions are defined below
-#region
-    def temperature_fitness(self, results):
-        """
-        Calculate fitness based on the difference between the actual and target temperature.
 
-        Parameters:
-            results (dict): Simulation results containing temperature.
-
-        Returns:
-            float: Fitness score (lower is better).
-        """
-        try:
-            actual_temperature = results.get("temperature", 0.0)
-            fitness = self.calculate_difference(actual_temperature, self.target_temperature)
-            print(f"Temperature Fitness: {fitness} (Actual: {actual_temperature}, Target: {self.target_temperature})")
-            return fitness
-        except Exception as e:
-            print(f"Error during temperature fitness calculation: {e}")
-            return None
-
-    def species_fitness(self, results):
-        """
-        Calculate fitness based on the difference between actual and target species mole fractions.
-
-        Parameters:
-            results (dict): Simulation results containing mole fractions.
-
-        Returns:
-            float: Fitness score (lower is better).
-        """
-        try:
-            mole_fractions = results.get("mole_fractions", None)
-            #print(type(mole_fractions))
-            if mole_fractions is None:
-                raise ValueError("Mole fractions missing in the results")
+    def calculate_psr_fitness(self, species_reduced, reduced_results, epsilon):
+            total_error = 0.0
             
-            species_name_to_index = {name: i for i, name in enumerate(results["species_names"])}
-            #print("Species Name to index:", species_name_to_index)
-            #print(type(species_name_to_index))
-            fitness = 0.0
-            #print("Target species items as passed: ", self.target_species.items()) # passed as a dict
-            for species, target_fraction in self.target_species.items():
-                if species not in species_name_to_index:
-                    print(f"Warning! species {species} not found in the mechanism.")
-                    actual_fraction = 0.0
-                else:
-                    #actual_fraction = mole_fractions[species_name_to_index[species]]
-                    actual_fraction = mole_fractions.get(species, 0.0)
-                    print(f"The actual fraction of species: {species} ", actual_fraction)
-                    
-                fitness += self.calculate_difference(actual_fraction, target_fraction)
-                print(f"Species Fitness for {species}: {self.calculate_difference(
-                    actual_fraction, target_fraction)} (Actual: {actual_fraction}, Target: {target_fraction})")
-            fitness /= len(self.target_species)
-            return fitness
-        except Exception as e:
-            print(f"Error during species fitness calculation: {e}")
-            return None
-
-    
-    def ignition_delay_fitness(self, results):
-        """
-    Calculate fitness based on the difference between actual and target ignition delay time.
-
-    Parameters:
-        results (dict): Simulation results containing ignition delay time.
-        target_delay (float): Target ignition delay time (in seconds).
-
-    Returns:
-        float: Fitness score (lower is better).
-    """
-        try:
-            actual_delay = results.get("ignition_delay", 0.0)
-            fitness = self.calculate_difference(actual_delay, self.target_delay)
-            print(f"Ignition Delay Fitness: {fitness} (Actual: {actual_delay}, Target: {self.target_delay})")
-            return fitness
-        except Exception as e:
-            print(f"Error during ignition delay fitness calculation: {e}")
-            return None
-    
-    def combined_fitness(self, results):
-        """
-        Combine temperature and species fitness into a single score.
-
-        Parameters:
-            results (dict): Simulation results containing temperature and mole fractions.
-
-        Returns:
-            float: Combined fitness score (lower is better).
-        """
-        try:
-            temp_fitness = self.temperature_fitness(results) * self.weight_temperature
-            species_fitness = self.species_fitness(results) * self.weight_species
-            ignition_fitness = self.ignition_delay_fitness(results) * self.weight_ignition_delay
+            # Create SimulationRunner instances for full and reduced mechanisms
+            full_runner = SimulationRunner('gri30.yaml', self.reactor_type)
+                
+            # Run simulations for this condition
+            full_profiles = full_runner.run_simulation(self.condition)
         
-            total_fitness = temp_fitness + species_fitness + ignition_fitness
-            print(f"Combined Fitness: {total_fitness}")
-            return total_fitness
-        except Exception as e:
-            print(f"Error during combined_fitness calculation: {e}")
-            return None
-#endregion
+            reduced_profiles = reduced_results
+            #print(f"Full profiles for condition : {full_profiles}")
+            #print(f"Reduced profiles for condition : {reduced_profiles}")
+            
+            if not isinstance(reduced_profiles, dict):
+                raise ValueError(f"Expected reduced_profiles to be a dictionary, got {type(reduced_profiles)}")
+            if not isinstance(full_profiles, dict):
+                raise ValueError(f"Expected full_profiles to be a dictionary, got {type(full_profiles)}")
+            
+            full_time = full_profiles['time'] # change to grid for PREMIX
+            print(f"Full time shape: {full_time.shape}, type: {type(full_time)}")
+            #is_uniform_grid = np.allclose(np.diff(z), np.diff(z).mean())
+            reduced_time = reduced_profiles['time']  # Time points for the reduced mechanism
+            print(f"Reduced time shape: {reduced_time.shape}, type: {type(reduced_time)}")
+            
+            # Truncate the reduced profile to match the full profile's time range
+            max_time = full_time[-1]  # Last time point of the full profile
+            valid_indices = reduced_time <= max_time  # Indices where reduced time is within the full time range
+            truncated_reduced_time = reduced_time[valid_indices]  # Truncated reduced time array
+            print(f"Truncated reduced time shape: {truncated_reduced_time.shape}")
+            
+            # Truncate mole fractions for reduced profiles
+            truncated_reduced_profiles = {}
+            for species in reduced_profiles["mole_fractions"]:
+                truncated_reduced_profiles[species] = reduced_profiles["mole_fractions"][species][valid_indices]
+            
+            # Interpolate the full profile to match the truncated reduced time array
+            interpolated_full_profiles = {}
+            for species in full_profiles:
+                if species == "time":  # Skip the time array
+                    continue
+                interpolated_full_profiles[species] = np.interp(
+                    truncated_reduced_time, full_time, full_profiles[species]
+                )
+                
+            condition_error = 0.0
+            for k, species in enumerate(species_reduced):
+                if species not in interpolated_full_profiles or species not in truncated_reduced_profiles:
+                    continue
+                #print(f"Processing species: {species}")
+                Y_orig = interpolated_full_profiles[species]
+                
+                Y_calcd = truncated_reduced_profiles[species]
+                print(f"Y_orig shape: {Y_orig.shape}, Y_calcd shape: {Y_calcd.shape}")
+                
+                # print(f"Species: {species}")
+                # print(f"Y_orig: {Y_orig}")
+                # print(f"Y_calcd: {Y_calcd}")
+                
+                # W_k = 1.0 if np.max(Y_orig) >= 1e-7 else 0.0
+                # if W_k == 0.0:
+                #     continue
+                W_k = 1.0
+                l2_orig = np.sqrt(np.trapezoid(Y_orig**2, truncated_reduced_time))
+                
+                diff = Y_calcd - Y_orig
+                l2_diff = np.sqrt(np.trapezoid(diff**2, truncated_reduced_time))
+                
+                if l2_orig > 0:
+                    relative_error = W_k * l2_diff / l2_orig
+                else:
+                    relative_error = 0 if l2_diff == 0 else W_k # handle edge cases
+                    
+                # print(f"L2_orig: {l2_orig}, L2_diff: {l2_diff}")
+                # print(f"Relative error for {species}: {relative_error}")
+                    
+                condition_error += relative_error
+                # print(f"Condition error: {condition_error}\n")
+            
+            total_error += condition_error
+                    
+            return 1.0/(epsilon + total_error)
+# ALL previous fitness functions are defined below
