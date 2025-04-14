@@ -1,0 +1,28 @@
+{
+    "population_size": 50,
+    "genome_length": 325,
+    "crossover_rate": 0.6,
+    "mutation_rate": 0.002,
+    "num_generations": 500,
+    "elite_size": 2,
+    "original_mechanism_path": "E:/PPP_WS2024-25/ChemicalMechanismReduction/data/gri30.yaml",
+    "output_directory": "E:/PPP_WS2024-25/ChemicalMechanismReduction/data/output",
+    "reactor_type": "constant_pressure",
+    "difference_function": "sigmoid_integral",
+    "sharpening_factor": 6,
+    "lam": 0.1,
+    "condition": {
+        "phi": 1.0,
+        "fuel": {"CH4": 1.0},
+        "oxidizer": {"O2": 1.0, "N2": 7.52},
+        "pressure": 2670,
+        "temperature": 1800.0,
+        "mass_flow_rate": 0.0989
+    },
+    "key_species": ["CH4", "O2", "CO2", "CO", "OH", "CH3"],
+    "weights": {
+        "temperature": 1.0,
+        "IDT": 1.0,
+        "species": "data/species_weights.json"
+    }
+}
