@@ -358,7 +358,6 @@ def calculate_weights_at_ignition(aggregate_sens_at_ign, output_file):
     print(f"Weights saved to {output_file}")
     return final_weights
 
-
 config_path = "params.json"
 with open(config_path, "r") as f:
         config = json.load(f)
@@ -374,12 +373,6 @@ temp = condition['temperature']
 simtype = 'HP'
 
 mech = 'gri30.yaml'
-#mech = "reduced_mech_64_rxns.yaml"
-dk = 5.e-2
-
-# string_list = [fuel, mech, str(phi), str(pres), str(temp), str(dk), simtype]
-# string_list = '_'.join(string_list)
-# print(string_list)
 
 gas = ct.Solution(mech)
 gas.set_equivalence_ratio( phi, fuel, oxidizer_comp )
@@ -415,8 +408,6 @@ elapsed = timeit.default_timer() - start_time
 print('Finish Adjoint {:.2f}'.format(elapsed))
 
 
-# sensitivity_directions, time, species_sensitivities = species_sens(gas, temp, pres, fuel, phi, key_species, simtype, ign0, bootplot=True)
-
 species_sensitivities, aggregate_sensitivities, time, species_sens_at_ign, aggregate_sens_at_ign = species_sens(
     gas, temp, pres, fuel, phi, key_species, simtype, ign0,time_equi, bootplot=True)
 # Plot the evolution of sensitivity directions for a specific species (e.g., OH)
@@ -449,22 +440,3 @@ for species, weight in weights.items():
 # plt.tight_layout()
 # plt.show()
 
-# # Calculate the inner product between species and temperature sensitivity directions
-# temperature_sens = sensitivity_directions['OH']  # Replace 'OH' with temperature sensitivity if available
-# inner_products = {}
-# for species in key_species:
-#     inner_products[species] = np.sum(
-#         sensitivity_directions[species] * temperature_sens, axis=1
-#     )
-
-# # Plot the inner product for each species
-# plt.figure(figsize=(10, 6))
-# for species in key_species:
-#     plt.plot(np.array(time)/ign0, inner_products[species], label=f"{species}")
-# plt.xlabel("Normalized Time [s]")
-# plt.ylabel("Inner Product with Temperature Sensitivity")
-# plt.title("Alignment of Species Sensitivity Directions with Temperature Sensitivity")
-# plt.legend()
-# plt.grid()
-# plt.tight_layout()
-# plt.show()

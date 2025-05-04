@@ -11,36 +11,58 @@ import numpy as np
 import importlib.util
 from src.ChemicalMechanismGA.utils.species_sens_weights import compute_species_weights
 from src.ChemicalMechanismGA.utils.sensitivity_reduce import MechanismReducer
+from extras.premix_reactor import PremixFlameComparison 
+from src.ChemicalMechanismGA.tests.test_full_red_compare import MechanismComparison
 
+# Main GUI class for the genetic algorithm application
 class GeneticAlgorithmGUI:
     def __init__(self, root):
+        # Store the root Tkinter window and set the title and size of the GUI window
         self.root = root
         self.root.title("Genetic Algorithm for Chemical Mechanism Reduction")
         self.root.geometry("1000x800")
         
+        # Create a canvas for scrollable content and a vertical scrollbar
         self.canvas = tk.Canvas(self.root)
         self.scrollbar = ttk.Scrollbar(self.root, orient="vertical", command=self.canvas.yview)
+        # Frame inside the canvas to hold all widgets
         self.scrollable_frame = ttk.Frame(self.canvas)
         
+        # Bind the scrollable frame to update the canvas scroll region when its size changes
         self.scrollable_frame.bind(
             "<Configure>",
             lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
         )
+        # Place the frame inside the canvas at the top-left corner
         self.canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
+        # Link the canvas to the scrollbar for vertical scrolling
         self.canvas.configure(yscrollcommand=self.scrollbar.set)
         
+        # Pack the scrollbar on the right side and the canvas on the left, filling available space
         self.scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         
+        # Create a notebook (tabbed interface) to organize tabs
         self.notebook = ttk.Notebook(self.scrollable_frame)
         self.notebook.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         
+        # Create the Configuration tab frame with padding for better spacing
         self.main_frame = ttk.Frame(self.notebook, padding="10")
         self.notebook.add(self.main_frame, text="Configuration")
         
+        # Create the Tests tab frame with padding
         self.tests_frame = ttk.Frame(self.notebook, padding="10")
         self.notebook.add(self.tests_frame, text="Tests")
         
+        # Create the Flame Simulation tab frame with padding
+        self.flame_frame = ttk.Frame(self.notebook, padding="10")
+        self.notebook.add(self.flame_frame, text="Flame Simulation")
+        
+        # Create the Constant Pressure Simulation tab frame with padding
+        self.const_pressure_frame = ttk.Frame(self.notebook, padding="10")
+        self.notebook.add(self.const_pressure_frame, text="Constant Pressure Simulation")
+        
+        # Dictionary to store configuration variables as Tkinter StringVar or BooleanVar objects
         self.config_vars = {
             "population_size": tk.StringVar(value="50"),
             "genome_length": tk.StringVar(value="325"),
@@ -67,30 +89,63 @@ class GeneticAlgorithmGUI:
             "reduction_threshold": tk.StringVar(value="0.1")
         }
         
+        # Dictionary to store test-related variables
         self.test_vars = {
-            # Common parameters
             "full_mech": tk.StringVar(value="gri30.yaml"),
             "reduced_mech": tk.StringVar(value="reduced_random_gri30.yaml"),
             "reduction_fraction": tk.StringVar(value="0.3"),
-            # Mutation parameters
             "mutation_rate": tk.StringVar(value="0.01"),
-            # Fitness parameters
             "temperature": tk.StringVar(value="1800"),
             "pressure": tk.StringVar(value="1e5"),
             "equivalence_ratio": tk.StringVar(value="1.0"),
             "fuel": tk.StringVar(value="CH4"),
             "oxidizer": tk.StringVar(value="O2:0.21, N2:0.79"),
-            # Initialization parameters
             "diversity_prob": tk.StringVar(value="0.05"),
-            "remove_reactions": tk.StringVar(value='["H + O2 <=> O + OH", "HO2 + OH <=> H2O + O2"]')
+            "remove_reactions": tk.StringVar(value='["H + O2 <=> O + OH", "HO2 + OH <=> H2O + O2"]'),
+            "crossover_rate": tk.StringVar(value="0.6"),
+            "genome_length": tk.StringVar(value="20"),
+            "population_size": tk.StringVar(value="10")
         }
         
+        # Dictionary to store flame simulation variables
+        self.flame_vars = {
+            "reactor_type": tk.StringVar(value="Laminar Flame Reactor"),
+            "phi": tk.StringVar(value="2.0"),
+            "temperature": tk.StringVar(value="1000"),
+            "pressure": tk.StringVar(value=str(ct.one_atm)),
+            "fuel": tk.StringVar(value="CH4"),
+            "oxidizer": tk.StringVar(value="O2:0.21, N2:0.79"),
+            "mass_flow_rate": tk.StringVar(value="0.04"),
+            "reduced_mech_path": tk.StringVar(value=""),
+            "full_mech_name": tk.StringVar(value="gri30.yaml")
+        }
+        
+        # Dictionary to store constant pressure simulation variables
+        self.const_pressure_vars = {
+            "temperature": tk.StringVar(value="2561"),
+            "pressure": tk.StringVar(value=str(ct.one_atm)),
+            "equivalence_ratios": tk.StringVar(value="[0.4]"),
+            "fuel": tk.StringVar(value="CH4"),
+            "oxidizer": tk.StringVar(value="O2:0.21, N2:0.79"),
+            "end_time": tk.StringVar(value="0.1"),
+            "key_species": tk.StringVar(value='["CH4", "O2", "CO2", "CO", "OH"]'),
+            "reduced_mech_path": tk.StringVar(value=""),
+            "full_mech_name": tk.StringVar(value="gri30.yaml"),
+            "output_dir": tk.StringVar(value="./output_gui"),
+            "xlim": tk.StringVar(value="0.1")
+        }
+        
+        # Initialize the GUI input fields and interfaces
         self.create_input_fields()
         self.create_test_interface()
+        self.create_flame_interface()
+        self.create_const_pressure_interface()
         
+        # Create a text widget to display output messages in the Configuration tab
         self.output_text = tk.Text(self.main_frame, height=10, width=80)
         self.output_text.grid(row=len(self.config_vars) + 6, column=0, columnspan=3, pady=10)
         
+        # Add a button to run the genetic algorithm
         ttk.Button(self.main_frame, text="Run Genetic Algorithm", command=self.run_ga).grid(row=len(self.config_vars) + 7, column=0, columnspan=3, pady=10)
     
     def create_input_fields(self):
@@ -156,7 +211,6 @@ class GeneticAlgorithmGUI:
         ttk.Button(self.tests_frame, text="Run Test", command=self.run_test).grid(row=row, column=2, pady=2)
         row += 1
         
-        # Placeholder frame for test-specific fields
         self.test_fields_frame = ttk.Frame(self.tests_frame)
         self.test_fields_frame.grid(row=row, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
         row += 1
@@ -164,11 +218,80 @@ class GeneticAlgorithmGUI:
         self.output_text = tk.Text(self.tests_frame, height=10, width=80)
         self.output_text.grid(row=row, column=0, columnspan=3, pady=10)
         
-        # Initialize fields for the default test (mutation)
         self.update_test_fields("mutation")
     
+    def create_flame_interface(self):
+        row = 0
+        ttk.Label(self.flame_frame, text="Select Reactor Type").grid(row=row, column=0, columnspan=3, sticky=tk.W, pady=5)
+        row += 1
+        
+        reactor_types = ["Laminar Flame Reactor"]
+        self.reactor_var = tk.StringVar(value="Laminar Flame Reactor")
+        ttk.OptionMenu(self.flame_frame, self.reactor_var, "Laminar Flame Reactor", *reactor_types, command=self.update_flame_fields).grid(row=row, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=2)
+        row += 1
+        
+        self.flame_fields_frame = ttk.Frame(self.flame_frame)
+        self.flame_fields_frame.grid(row=row, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
+        row += 1
+        
+        self.flame_output_text = tk.Text(self.flame_frame, height=10, width=80)
+        self.flame_output_text.grid(row=row, column=0, columnspan=3, pady=10)
+        
+        ttk.Button(self.flame_frame, text="Run Flame Simulation", command=self.run_flame_simulation).grid(row=row + 1, column=0, columnspan=3, pady=10)
+        
+        self.update_flame_fields("Laminar Flame Reactor")
+    
+    def create_const_pressure_interface(self):
+        row = 0
+        ttk.Label(self.const_pressure_frame, text="Constant Pressure Reactor Simulation").grid(row=row, column=0, columnspan=3, sticky=tk.W, pady=5)
+        row += 1
+        
+        self.const_pressure_fields_frame = ttk.Frame(self.const_pressure_frame)
+        self.const_pressure_fields_frame.grid(row=row, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
+        row += 1
+        
+        # Create input fields for constant pressure simulation
+        ttk.Label(self.const_pressure_fields_frame, text="Temperature (K)").grid(row=0, column=0, sticky=tk.W, pady=2)
+        ttk.Entry(self.const_pressure_fields_frame, textvariable=self.const_pressure_vars["temperature"], width=50).grid(row=0, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=2)
+        
+        ttk.Label(self.const_pressure_fields_frame, text="Pressure (Pa)").grid(row=1, column=0, sticky=tk.W, pady=2)
+        ttk.Entry(self.const_pressure_fields_frame, textvariable=self.const_pressure_vars["pressure"], width=50).grid(row=1, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=2)
+        
+        ttk.Label(self.const_pressure_fields_frame, text="Equivalence Ratios (JSON list, e.g., [0.4, 0.8])").grid(row=2, column=0, sticky=tk.W, pady=2)
+        ttk.Entry(self.const_pressure_fields_frame, textvariable=self.const_pressure_vars["equivalence_ratios"], width=50).grid(row=2, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=2)
+        
+        ttk.Label(self.const_pressure_fields_frame, text="Fuel").grid(row=3, column=0, sticky=tk.W, pady=2)
+        ttk.Entry(self.const_pressure_fields_frame, textvariable=self.const_pressure_vars["fuel"], width=50).grid(row=3, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=2)
+        
+        ttk.Label(self.const_pressure_fields_frame, text="Oxidizer (e.g., O2:0.21, N2:0.79)").grid(row=4, column=0, sticky=tk.W, pady=2)
+        ttk.Entry(self.const_pressure_fields_frame, textvariable=self.const_pressure_vars["oxidizer"], width=50).grid(row=4, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=2)
+        
+        ttk.Label(self.const_pressure_fields_frame, text="End Time (s)").grid(row=5, column=0, sticky=tk.W, pady=2)
+        ttk.Entry(self.const_pressure_fields_frame, textvariable=self.const_pressure_vars["end_time"], width=50).grid(row=5, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=2)
+        
+        ttk.Label(self.const_pressure_fields_frame, text="Key Species (JSON list, e.g., ['CH4', 'O2'])").grid(row=6, column=0, sticky=tk.W, pady=2)
+        ttk.Entry(self.const_pressure_fields_frame, textvariable=self.const_pressure_vars["key_species"], width=50).grid(row=6, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=2)
+        
+        ttk.Label(self.const_pressure_fields_frame, text="Reduced Mechanism File").grid(row=7, column=0, sticky=tk.W, pady=2)
+        ttk.Entry(self.const_pressure_fields_frame, textvariable=self.const_pressure_vars["reduced_mech_path"], width=40).grid(row=7, column=1, sticky=(tk.W, tk.E), pady=2)
+        ttk.Button(self.const_pressure_fields_frame, text="Browse", command=lambda: self.browse_file("reduced_mech_path", self.const_pressure_vars)).grid(row=7, column=2, pady=2)
+        
+        ttk.Label(self.const_pressure_fields_frame, text="Full Mechanism Name (e.g., gri30.yaml)").grid(row=8, column=0, sticky=tk.W, pady=2)
+        ttk.Entry(self.const_pressure_fields_frame, textvariable=self.const_pressure_vars["full_mech_name"], width=50).grid(row=8, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=2)
+        
+        ttk.Label(self.const_pressure_fields_frame, text="Output Directory").grid(row=9, column=0, sticky=tk.W, pady=2)
+        ttk.Entry(self.const_pressure_fields_frame, textvariable=self.const_pressure_vars["output_dir"], width=40).grid(row=9, column=1, sticky=(tk.W, tk.E), pady=2)
+        ttk.Button(self.const_pressure_fields_frame, text="Browse", command=lambda: self.browse_file("output_dir", self.const_pressure_vars, is_dir=True)).grid(row=9, column=2, pady=2)
+        
+        ttk.Label(self.const_pressure_fields_frame, text="X-Axis Limit (ms)").grid(row=10, column=0, sticky=tk.W, pady=2)
+        ttk.Entry(self.const_pressure_fields_frame, textvariable=self.const_pressure_vars["xlim"], width=50).grid(row=10, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=2)
+        
+        self.const_pressure_output_text = tk.Text(self.const_pressure_frame, height=10, width=80)
+        self.const_pressure_output_text.grid(row=row, column=0, columnspan=3, pady=10)
+        
+        ttk.Button(self.const_pressure_frame, text="Run Constant Pressure Simulation", command=self.run_const_pressure_simulation).grid(row=row + 1, column=0, columnspan=3, pady=10)
+    
     def update_test_fields(self, test_type):
-        # Clear previous fields
         for widget in self.test_fields_frame.winfo_children():
             widget.destroy()
         
@@ -182,31 +305,24 @@ class GeneticAlgorithmGUI:
             ttk.Label(self.test_fields_frame, text="Full Mechanism File").grid(row=row, column=0, sticky=tk.W, pady=2)
             ttk.Entry(self.test_fields_frame, textvariable=self.test_vars["full_mech"], width=50).grid(row=row, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=2)
             row += 1
-            
             ttk.Label(self.test_fields_frame, text="Reduced Mechanism File").grid(row=row, column=0, sticky=tk.W, pady=2)
             ttk.Entry(self.test_fields_frame, textvariable=self.test_vars["reduced_mech"], width=50).grid(row=row, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=2)
             row += 1
-            
             ttk.Label(self.test_fields_frame, text="Reduction Fraction").grid(row=row, column=0, sticky=tk.W, pady=2)
             ttk.Entry(self.test_fields_frame, textvariable=self.test_vars["reduction_fraction"], width=50).grid(row=row, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=2)
             row += 1
-            
             ttk.Label(self.test_fields_frame, text="Temperature (K)").grid(row=row, column=0, sticky=tk.W, pady=2)
             ttk.Entry(self.test_fields_frame, textvariable=self.test_vars["temperature"], width=50).grid(row=row, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=2)
             row += 1
-            
             ttk.Label(self.test_fields_frame, text="Pressure (Pa)").grid(row=row, column=0, sticky=tk.W, pady=2)
             ttk.Entry(self.test_fields_frame, textvariable=self.test_vars["pressure"], width=50).grid(row=row, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=2)
             row += 1
-            
             ttk.Label(self.test_fields_frame, text="Equivalence Ratio").grid(row=row, column=0, sticky=tk.W, pady=2)
             ttk.Entry(self.test_fields_frame, textvariable=self.test_vars["equivalence_ratio"], width=50).grid(row=row, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=2)
             row += 1
-            
             ttk.Label(self.test_fields_frame, text="Fuel").grid(row=row, column=0, sticky=tk.W, pady=2)
             ttk.Entry(self.test_fields_frame, textvariable=self.test_vars["fuel"], width=50).grid(row=row, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=2)
             row += 1
-            
             ttk.Label(self.test_fields_frame, text="Oxidizer").grid(row=row, column=0, sticky=tk.W, pady=2)
             ttk.Entry(self.test_fields_frame, textvariable=self.test_vars["oxidizer"], width=50).grid(row=row, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=2)
             row += 1
@@ -215,10 +331,62 @@ class GeneticAlgorithmGUI:
             ttk.Label(self.test_fields_frame, text="Diversity Probability").grid(row=row, column=0, sticky=tk.W, pady=2)
             ttk.Entry(self.test_fields_frame, textvariable=self.test_vars["diversity_prob"], width=50).grid(row=row, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=2)
             row += 1
-            
             ttk.Label(self.test_fields_frame, text="Remove Reactions (JSON list)").grid(row=row, column=0, sticky=tk.W, pady=2)
             ttk.Entry(self.test_fields_frame, textvariable=self.test_vars["remove_reactions"], width=50).grid(row=row, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=2)
             row += 1
+        
+        elif test_type == "crossover":
+            ttk.Label(self.test_fields_frame, text="Crossover Rate").grid(row=row, column=0, sticky=tk.W, pady=2)
+            ttk.Entry(self.test_fields_frame, textvariable=self.test_vars["crossover_rate"], width=50).grid(row=row, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=2)
+            row += 1
+            ttk.Label(self.test_fields_frame, text="Genome Length").grid(row=row, column=0, sticky=tk.W, pady=2)
+            ttk.Entry(self.test_fields_frame, textvariable=self.test_vars["genome_length"], width=50).grid(row=row, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=2)
+            row += 1
+            ttk.Label(self.test_fields_frame, text="Population Size").grid(row=row, column=0, sticky=tk.W, pady=2)
+            ttk.Entry(self.test_fields_frame, textvariable=self.test_vars["population_size"], width=50).grid(row=row, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=2)
+            row += 1
+        
+        elif test_type == "selection":
+            pass
+    
+    def update_flame_fields(self, reactor_type):
+        for widget in self.flame_fields_frame.winfo_children():
+            widget.destroy()
+        
+        row = 0
+        ttk.Label(self.flame_fields_frame, text="Equivalence Ratio (phi)").grid(row=row, column=0, sticky=tk.W, pady=2)
+        ttk.Entry(self.flame_fields_frame, textvariable=self.flame_vars["phi"], width=50).grid(row=row, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=2)
+        row += 1
+        
+        ttk.Label(self.flame_fields_frame, text="Temperature (K)").grid(row=row, column=0, sticky=tk.W, pady=2)
+        ttk.Entry(self.flame_fields_frame, textvariable=self.flame_vars["temperature"], width=50).grid(row=row, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=2)
+        row += 1
+        
+        ttk.Label(self.flame_fields_frame, text="Pressure (Pa)").grid(row=row, column=0, sticky=tk.W, pady=2)
+        ttk.Entry(self.flame_fields_frame, textvariable=self.flame_vars["pressure"], width=50).grid(row=row, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=2)
+        row += 1
+        
+        ttk.Label(self.flame_fields_frame, text="Fuel").grid(row=row, column=0, sticky=tk.W, pady=2)
+        ttk.Entry(self.flame_fields_frame, textvariable=self.flame_vars["fuel"], width=50).grid(row=row, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=2)
+        row += 1
+        
+        ttk.Label(self.flame_fields_frame, text="Oxidizer (e.g., O2:0.21, N2:0.79)").grid(row=row, column=0, sticky=tk.W, pady=2)
+        ttk.Entry(self.flame_fields_frame, textvariable=self.flame_vars["oxidizer"], width=50).grid(row=row, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=2)
+        row += 1
+        
+        if reactor_type == "Laminar Flame Reactor":
+            ttk.Label(self.flame_fields_frame, text="Mass Flow Rate (kg/m²/s)").grid(row=row, column=0, sticky=tk.W, pady=2)
+            ttk.Entry(self.flame_fields_frame, textvariable=self.flame_vars["mass_flow_rate"], width=50).grid(row=row, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=2)
+            row += 1
+        
+        ttk.Label(self.flame_fields_frame, text="Reduced Mechanism File").grid(row=row, column=0, sticky=tk.W, pady=2)
+        ttk.Entry(self.flame_fields_frame, textvariable=self.flame_vars["reduced_mech_path"], width=40).grid(row=row, column=1, sticky=(tk.W, tk.E), pady=2)
+        ttk.Button(self.flame_fields_frame, text="Browse", command=lambda: self.browse_file("reduced_mech_path", self.flame_vars)).grid(row=row, column=2, pady=2)
+        row += 1
+        
+        ttk.Label(self.flame_fields_frame, text="Full Mechanism Name (e.g., gri30.yaml)").grid(row=row, column=0, sticky=tk.W, pady=2)
+        ttk.Entry(self.flame_fields_frame, textvariable=self.flame_vars["full_mech_name"], width=50).grid(row=row, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=2)
+        row += 1
     
     def toggle_elite_size(self):
         state = "normal" if self.config_vars["elitism_enabled"].get() else "disabled"
@@ -241,10 +409,15 @@ class GeneticAlgorithmGUI:
             self.species_weights_label.grid_remove()
             self.species_weights_text.grid_remove()
     
-    def browse_file(self, key):
-        path = filedialog.askdirectory(title=f"Select {key.replace('_', ' ').title()}")
+    def browse_file(self, key, var_dict=None, is_dir=False):
+        if var_dict is None:
+            var_dict = self.config_vars
+        if is_dir:
+            path = filedialog.askdirectory(title=f"Select {key.replace('_', ' ').title()}")
+        else:
+            path = filedialog.askopenfilename(title=f"Select {key.replace('_', ' ').title()}")
         if path:
-            self.config_vars[key].set(path)
+            var_dict[key].set(path)
     
     def normalize_weights(self, weights):
         try:
@@ -279,6 +452,7 @@ class GeneticAlgorithmGUI:
             key_species = json.loads(self.config_vars["key_species"].get())
             if not key_species:
                 raise ValueError("Key species list cannot be empty")
+            
             conditions = json.loads(self.config_vars["conditions"].get())
             required_condition_keys = ["temperature", "pressure", "equivalence_ratio", "fuel", "oxidizer"]
             if not all(k in conditions for k in required_condition_keys):
@@ -459,7 +633,6 @@ class GeneticAlgorithmGUI:
                 elitism_enabled=config["elitism_enabled"],
                 deactivation_chance=config["deactivation_chance"],
                 init_with_reduced_mech=config["init_with_reduced_mech"]
-       
             )
             
             best_genome, best_fitness = ga.evolve(config["output_directory"])
@@ -505,7 +678,6 @@ class GeneticAlgorithmGUI:
                 result = module.run_test(mutation_rate=mutation_rate)
             
             elif test_module == "fitness":
-                # Prepare parameters for params_test.json
                 full_mech = self.test_vars["full_mech"].get()
                 reduced_mech = self.test_vars["reduced_mech"].get()
                 reduction_fraction = float(self.test_vars["reduction_fraction"].get())
@@ -515,16 +687,13 @@ class GeneticAlgorithmGUI:
                 fuel_str = self.test_vars["fuel"].get()
                 oxidizer_str = self.test_vars["oxidizer"].get()
                 
-                # Parse oxidizer composition
                 oxidizer_dict = {}
                 for pair in oxidizer_str.split(","):
                     species, ratio = pair.strip().split(":")
                     oxidizer_dict[species] = float(ratio)
                 
-                # Get key_species from main config
                 key_species = json.loads(self.config_vars["key_species"].get())
                 
-                # Prepare params_test.json
                 test_config = {
                     "full_mech": full_mech,
                     "reduced_mech": reduced_mech,
@@ -550,14 +719,203 @@ class GeneticAlgorithmGUI:
                     remove_reactions=remove_reactions
                 )
             
-            else:
-                # For crossover and selection, which don't have specific parameters yet
+            elif test_module == "crossover":
+                crossover_rate = float(self.test_vars["crossover_rate"].get())
+                genome_length = int(self.test_vars["genome_length"].get())
+                population_size = int(self.test_vars["population_size"].get())
+                if not (0 <= crossover_rate <= 1):
+                    raise ValueError("Crossover rate must be between 0 and 1")
+                if genome_length < 2:
+                    raise ValueError("Genome length must be at least 2")
+                if population_size < 2:
+                    raise ValueError("Population size must be at least 2")
+                result = module.run_test(
+                    crossover_rate=crossover_rate,
+                    genome_length=genome_length,
+                    population_size=population_size
+                )
+                self.output_text.insert(tk.END, result['summary'])
+            
+            elif test_module == "selection":
                 result = module.run_test()
             
-            self.output_text.insert(tk.END, f"Test {self.test_var.get()} completed.\nResult: {result}\n")
+            self.output_text.insert(tk.END, f"Test {self.test_var.get()} completed.\n")
         except Exception as e:
             self.output_text.insert(tk.END, f"Error running test {self.test_var.get()}: {str(e)}\n")
             messagebox.showerror("Test Error", f"An error occurred: {str(e)}")
+    
+    def run_flame_simulation(self):
+        self.flame_output_text.delete(1.0, tk.END)
+        self.flame_output_text.insert(tk.END, "Running flame simulation...\n")
+        self.root.update()
+        
+        try:
+            # Validate inputs
+            phi = float(self.flame_vars["phi"].get())
+            temperature = float(self.flame_vars["temperature"].get())
+            pressure = float(self.flame_vars["pressure"].get())
+            fuel = self.flame_vars["fuel"].get()
+            oxidizer_str = self.flame_vars["oxidizer"].get()
+            mass_flow_rate = float(self.flame_vars["mass_flow_rate"].get()) if self.reactor_var.get() == "Laminar Flame Reactor" else None
+            reduced_mech_path = self.flame_vars["reduced_mech_path"].get()
+            full_mech_name = self.flame_vars["full_mech_name"].get()
+            
+            if not reduced_mech_path or not os.path.exists(reduced_mech_path):
+                raise ValueError("Invalid or missing reduced mechanism file")
+            if not full_mech_name:
+                raise ValueError("Invalid full mechanism name")
+            try:
+                ct.Solution(full_mech_name)
+            except Exception as e:
+                raise ValueError(f"Invalid full mechanism name: {str(e)}")
+            if phi <= 0:
+                raise ValueError("Equivalence ratio must be positive")
+            if temperature <= 0:
+                raise ValueError("Temperature must be positive")
+            if pressure <= 0:
+                raise ValueError("Pressure must be positive")
+            if mass_flow_rate is not None and mass_flow_rate <= 0:
+                raise ValueError("Mass flow rate must be positive")
+            
+            # Parse oxidizer
+            oxidizer_dict = {}
+            for pair in oxidizer_str.split(","):
+                species, ratio = pair.strip().split(":")
+                oxidizer_dict[species] = float(ratio)
+            
+            # Create condition dictionary
+            condition = {
+                "phi": phi,
+                "temperature": temperature,
+                "pressure": pressure,
+                "fuel": fuel,
+                "oxidizer": oxidizer_dict
+            }
+            if mass_flow_rate is not None:
+                condition["mass_flow_rate"] = mass_flow_rate
+            
+            # Initialize gas with full mechanism
+            gas = ct.Solution(full_mech_name)
+            comparison = PremixFlameComparison(gas, reduced_mech_path, full_mech_name)
+            
+            # Determine reactor type and run simulation
+            reactor_type = self.reactor_var.get()
+            if reactor_type == "Laminar Flame Reactor":
+                results = comparison.compare_mechanisms(condition, reactor_type="premixed_flame")
+            else:  # Constant Pressure Reactor
+                results = comparison.compare_mechanisms(condition, reactor_type="constant_pressure")
+            
+            if results is None:
+                raise ValueError("Simulation failed for one or both mechanisms.")
+            
+            # Display results
+            output = "=== Flame Simulation Results ===\n\n"
+            output += f"Reactor Type: {reactor_type}\n"
+            output += f"Burning Velocity (Reduced): {results['reduced_burning_velocity']:.4f} m/s\n"
+            output += f"Burning Velocity (GRI-Mech): {results['gri_burning_velocity']:.4f} m/s\n"
+            output += f"Max Temperature (Reduced): {results['reduced_max_temp']:.2f} K\n"
+            output += f"Max Temperature (GRI-Mech): {results['gri_max_temp']:.2f} K\n"
+            output += "\nPlots saved as:\n"
+            output += "- temperature_profile.png\n"
+            output += "- mole_fraction_profiles.png\n"
+            output += "- heat_release_rate.png\n"
+            
+            self.flame_output_text.insert(tk.END, output)
+            self.flame_output_text.insert(tk.END, "\nFlame simulation completed.\n")
+        except Exception as e:
+            self.flame_output_text.insert(tk.END, f"Error running flame simulation: {str(e)}\n")
+            messagebox.showerror("Flame Simulation Error", f"An error occurred: {str(e)}")
+    
+    def run_const_pressure_simulation(self):
+        self.const_pressure_output_text.delete(1.0, tk.END)
+        self.const_pressure_output_text.insert(tk.END, "Running constant pressure simulation...\n")
+        self.root.update()
+        
+        try:
+            # Validate inputs
+            temperature = float(self.const_pressure_vars["temperature"].get())
+            pressure = float(self.const_pressure_vars["pressure"].get())
+            equivalence_ratios = json.loads(self.const_pressure_vars["equivalence_ratios"].get())
+            fuel = self.const_pressure_vars["fuel"].get()
+            oxidizer_str = self.const_pressure_vars["oxidizer"].get()
+            end_time = float(self.const_pressure_vars["end_time"].get())
+            key_species = json.loads(self.const_pressure_vars["key_species"].get())
+            reduced_mech_path = self.const_pressure_vars["reduced_mech_path"].get()
+            full_mech_name = self.const_pressure_vars["full_mech_name"].get()
+            output_dir = self.const_pressure_vars["output_dir"].get()
+            xlim = float(self.const_pressure_vars["xlim"].get())
+            
+            if not reduced_mech_path or not os.path.exists(reduced_mech_path):
+                raise ValueError("Invalid or missing reduced mechanism file")
+            if not full_mech_name:
+                raise ValueError("Invalid full mechanism name")
+            try:
+                ct.Solution(full_mech_name)
+            except Exception as e:
+                raise ValueError(f"Invalid full mechanism name: {str(e)}")
+            if not output_dir:
+                raise ValueError("Output directory must be specified")
+            if not os.path.exists(output_dir):
+                os.makedirs(output_dir)
+            if temperature <= 0:
+                raise ValueError("Temperature must be positive")
+            if pressure <= 0:
+                raise ValueError("Pressure must be positive")
+            if not equivalence_ratios:
+                raise ValueError("Equivalence ratios list cannot be empty")
+            if any(phi <= 0 for phi in equivalence_ratios):
+                raise ValueError("Equivalence ratios must be positive")
+            if end_time <= 0:
+                raise ValueError("End time must be positive")
+            if not key_species:
+                raise ValueError("Key species list cannot be empty")
+            if xlim <= 0:
+                raise ValueError("X-axis limit must be positive")
+            
+            # Parse oxidizer
+            oxidizer_dict = {}
+            for pair in oxidizer_str.split(","):
+                species, ratio = pair.strip().split(":")
+                oxidizer_dict[species] = float(ratio)
+            
+            # Create conditions dictionary
+            conditions = {
+                "temperature": temperature,
+                "pressure": pressure,
+                "equivalence_ratios": equivalence_ratios,
+                "fuel": fuel,
+                "oxidizer": oxidizer_dict,
+                "end_time": end_time,
+                "key_species": key_species
+            }
+            
+            # Initialize and run comparison
+            comparison = MechanismComparison(output_dir, reduced_mech_path, full_mech_name, xlim)
+            results = comparison.compare_mechanisms(conditions)
+            
+            if results is None:
+                raise ValueError("Simulation failed for one or more equivalence ratios.")
+            
+            # Display results
+            output = "=== Constant Pressure Simulation Results ===\n\n"
+            for phi, idts in results["idts"].items():
+                output += f"Equivalence Ratio (phi): {phi}\n"
+                output += f"IDT (Reduced): {idts['reduced']:.6f} ms\n"
+                output += f"IDT (Full): {idts['full']:.6f} ms\n"
+                output += f"Max Temperature (Reduced): {results['max_temps'][phi]['reduced']:.2f} K\n"
+                output += f"Max Temperature (Full): {results['max_temps'][phi]['full']:.2f} K\n\n"
+            
+            output += "Plots saved in the output directory:\n"
+            output += "- IDT.png\n"
+            output += "- temperature.png\n"
+            for species in key_species:
+                output += f"- mole_fraction_{species}.png\n"
+            
+            self.const_pressure_output_text.insert(tk.END, output)
+            self.const_pressure_output_text.insert(tk.END, "\nConstant pressure simulation completed.\n")
+        except Exception as e:
+            self.const_pressure_output_text.insert(tk.END, f"Error running constant pressure simulation: {str(e)}\n")
+            messagebox.showerror("Constant Pressure Simulation Error", f"An error occurred: {str(e)}")
 
 if __name__ == "__main__":
     root = tk.Tk()
