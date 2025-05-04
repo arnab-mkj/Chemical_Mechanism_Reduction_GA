@@ -1,95 +1,59 @@
+import json
+import cantera as ct
 from src.ChemicalMechanismGA.components.genetic_algorithm import GeneticAlgorithm
-#from src.ChemicalMechanismGA.utils.hyperparameter_tuning import HyperparameterTuner
 from src.ChemicalMechanismGA.components.fitness_function import FitnessEvaluator
 from src.ChemicalMechanismGA.utils.save_best_genome import save_genome_as_yaml
-from src.ChemicalMechanismGA.components.population import Population
-from src.ChemicalMechanismGA.components.simulation_runner import SimulationRunner
-import json
-import cantera as ct 
+import time
 
-"""
-    Todo: 
-          > Improve the visualization to plot lower values
-          > implement the burning velocity in PREMIX(optional)
-          > Implement sensitivity analysis
-          > Implement the third-body reaction mechanism (not needed, done by cantera)
-          > Mark definite species and their corresponding reaction
-"""
 def main():
-    # Step 1: Initialize GA parameters
-    population_size = 50
-    genome_length = 325  # Number of reactions in GRI-Mech 3.0
-    crossover_rate = 0.6
-    mutation_rate = 0.1
-    num_generations = 500
-    elite_size = 2
+    # Step 1: Load configuration file
+    start_time = time.time()
+    config_path = "params.json"
+    with open(config_path, "r") as f:
+        config = json.load(f)
+
+    # Step 2: Load species weights from a separate file
+    weights_file = config["weights"]["species"]
+    with open(weights_file, "r") as f:
+        species_weights = json.load(f)
     
-    # Paths for the mechanism files
-    original_mechanism_path = "E:/PPP_WS2024-25/ChemicalMechanismReduction/data/gri30.yaml" 
-    output_directory = "E:/PPP_WS2024-25/ChemicalMechanismReduction/data/output"  
+    # Step 3: Extract parameters from the configuration
+    population_size = config["population_size"]
+    genome_length = config["genome_length"]
+    crossover_rate = config["crossover_rate"]
+    mutation_rate = config["mutation_rate"]
+    num_generations = config["num_generations"]
+    elite_size = config["elite_size"]
+    original_mechanism_path = config["original_mechanism_path"]
+    output_directory = config["output_directory"]
+    reactor_type = config["reactor_type"]
+    difference_function = config["difference_function"]
+    sharpening_factor = config["sharpening_factor"]
+    normalization_method = config["normalization_method"]
+    conditions = config["conditions"]
+    key_species = config["key_species"]
+    weights = {
+        "temperature": config["weights"]["temperature"],
+        "IDT": config["weights"]["IDT"],
+        "species": species_weights,
+        "reactions": config["weights"] ["reactions"]
+    }
     
-    # Reactor type
-    reactor_type = "constant_pressure"  # Example: batch reactor
-  
-    weights = {"temperature": 1, "species": 1, "ignition_delay": 1}
-    #weights = {"temperature": 0.5, "species": 0.5}
-    
-    difference_function = "logarithmic"  # Default difference function
-    sharpening_factor = 6 # empirical value
-    lam = 0.1
-    #region
-    # conditions_list = [
-    #     # Condition 1: Lean flame (phi=0.8)
-    #     {
-    #         'phi': 0.8,
-    #         'fuel': {'CH4': 1.0},
-    #         'oxidizer': {'O2': 0.21, 'N2': 0.79},
-    #         'pressure': ct.one_atm,
-    #         'temperature': 300.0,
-    #
-    #     },
-    #     # Condition 2: Stoichiometric flame (phi=1.0)
-    #     {
-    #         'phi': 1.0,
-    #         'fuel': {'CH4': 1.0},
-    #         'oxidizer': {'O2': 0.21, 'N2': 0.79},
-    #         'pressure': ct.one_atm,
-    #         'temperature': 300.0
-    #     },
-    #     # Condition 3: Rich flame (phi=1.2)
-    #     {
-    #         'phi': 1.2,
-    #         'fuel': {'CH4': 1.0},
-    #         'oxidizer': {'O2': 0.21, 'N2': 0.79},
-    #         'pressure': ct.one_atm,
-    #         'temperature': 300.0
-    #     }
-    # ]
-    
-    # fitness = evaluate_reduction_mechanism('gri30.yaml', 'reduced_16sp.yaml', conditions_list)
-    # print(f"Fitness of reduced mechanism: (fitness:.8f)")
-    # higher value for better reduced mechanism
-    #endregion
-    condition = {
-            'phi': 0.8,
-            'fuel': {'CH4'}, #mole fraction
-            'oxidizer': {'O2': 0.1938, 'N2': 0.7287},
-            'pressure': 2670 * ct.one_atm / 101325, #* 0.0263, (20 torr)
-            'temperature': 1800.0,
-            'mass_flow_rate': 0.0989 #kg/m^2/s
-        }
-    species_def = ['CH4','O2','CO2','H2O','CO','H2','O','OH','H','CH3']
+
+    # Step 4: Initialize the fitness evaluator
     fitness_evaluator = FitnessEvaluator(
         original_mechanism_path,
         reactor_type,
-        condition,
+        conditions,
         weights,
+        genome_length,
         difference_function,
         sharpening_factor,
-        lam
-        )
-  
-    # Step 3: Create GA instance
+        normalization_method,
+        key_species
+    )
+
+    # Step 5: Create GA instance
     ga = GeneticAlgorithm(
         population_size,
         genome_length,
@@ -98,37 +62,32 @@ def main():
         num_generations,
         elite_size,
         fitness_evaluator,
-        species_def# ????? needed?? check!!!!
+        key_species, 
+        difference_function
     )
 
-    # Step 4: Run the GEnetic Algorithm
-    best_genome, best_fitness = ga.evolve(output_directory
-                                          ) 
-    #gets the fitness score from fitness_function.py
-                   # and then passes to evolve in Genetic algo which then again passes to
-                   #evaluate_fitness in population to store them in an array for a particular population
-    # Step 5: Save results
+    # Step 6: Run the Genetic Algorithm
+    best_genome, best_fitness = ga.evolve(output_directory)
+
+    # Step 7: Save results
     print(f"\nBest solution found:")
     print(f"Fitness: {best_fitness}")
     print(f"Number of active reactions: {sum(best_genome)}")
 
-    
     # Save the best genome as a reduced mechanism in YAML format
-    output_path = f"{output_directory}/best_reduced_mechanism.yaml"
+    output_path = f"{output_directory}/{difference_function}"
     save_genome_as_yaml(best_genome, original_mechanism_path, output_path)
     print(f"Best reduced mechanism saved to: {output_path}")
 
     # Save fitness history for analysis
-    fitness_history_path = f"{output_directory}/fitness_history.json"
+    fitness_history_path = f"{output_directory}/{difference_function}/fitness_history.json"
     with open(fitness_history_path, "w") as file:
         json.dump(ga.fitness_history, file, indent=4)
     print(f"Fitness history saved to: {fitness_history_path}")
     
-    # Save species concentrations
-    species_concentrations_path = f"{output_directory}/mole_fractions.json"
-    print(f"Species concentrations saved to: {species_concentrations_path}")
-    
-    
+    end_time = time.time()
+    total_runtime = end_time - start_time
+    print(f"\nTotal runtime: {total_runtime:.2f} seconds")
     
 if __name__ == "__main__":
     main()
