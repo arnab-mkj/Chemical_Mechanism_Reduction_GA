@@ -8,12 +8,14 @@ import os
 from scipy import integrate
 from src.ChemicalMechanismGA.components.simulation_runner import SimulationRunner
 from ..utils.save_species_conc import save_mole_fractions_to_json, save_species_concentrations
-from src.ChemicalMechanismGA.components.constant_pressure_fitness import ConstantPressureFitness
-from src.ChemicalMechanismGA.components.error_fitness import ConstantPressureError
+# from src.ChemicalMechanismGA.components.constant_pressure_fitness import ConstantPressureFitness
+from src.ChemicalMechanismGA.components.error_fitness import ConstantPressureFitness
+from src.ChemicalMechanismGA.components.IDT_calc import idt_value
+import math
 
 class FitnessEvaluator:
-    def __init__(self, mech, reactor_type, condition,
-                 weights, difference_function, sharpening_factor, lam):
+    def __init__(self, mech, reactor_type, conditions,
+                 weights, genome_length,  difference_function, sharpening_factor, normalization_method, key_species):
         """
         Initialize the FitnessEvaluator.
 
@@ -33,49 +35,71 @@ class FitnessEvaluator:
         """
         self.mech = mech
         self.reactor_type = reactor_type
-        self.condition = condition
+        self.conditions = conditions
+        self.genome_length = genome_length
         
-        self.difference_function = difference_function
+        self.dfunc = difference_function
+        self.norm_func = normalization_method
         self.sharpening_factor = sharpening_factor
-        self.lam = lam
         self.weights = weights
-        self.full_runner = SimulationRunner('gri30.yaml', self.reactor_type)
+        self.full_mech = SimulationRunner(self.mech, self.reactor_type)
+        self.key_species = key_species
         
         # Create the fitness calculator based on reactor type
         if reactor_type == "constant_pressure":
-            self.fitness_calculator = ConstantPressureError(self.difference_function, self.sharpening_factor, self.lam)
+            self.fitness_calculator = ConstantPressureFitness(self.dfunc, self.sharpening_factor, self.norm_func, self.conditions, self.weights)
         else:
             raise ValueError(f"Unsupported reactor type: {reactor_type}")
         
         #self.target_delay = target_delay
         
 
-    def create_reduced_mechanism(self, genome, write_to_file=False):
-        """
-        Create a reduced mechanism based on the genome.
-
-        Parameters:
-            genome (list): Binary genome representing active reactions.
-
-        Returns:
-            ct.Solution: Reduced mechanism as a Cantera Solution object.
-        """
+    def create_reduced_mechanism(self, genome, write_to_file, keep_all_species, condition): # to false
             
         gas = ct.Solution(self.mech)
-        reactions = gas.reactions()
-        reduced_reactions = [reaction for i, reaction in enumerate(reactions) if genome[i] == 1]
-        #print(reduced_reactions)
-        if len(reduced_reactions) < 50:  # Arbitrary threshold
-            raise ValueError("Reduced mechanism has too few reactions")
+        reactions = gas.reactions() #gets reaactions from full mech
         
+        #print(reduced_reactions)
+        # Identify duplicate reactions
+        duplicate_groups = {}
+        for i, reaction in enumerate(reactions):
+            if hasattr(reaction, 'duplicate') and reaction.duplicate:
+                key = tuple(sorted(reaction.reactants.items()))  # Use reactants as a key
+                if key not in duplicate_groups:
+                    duplicate_groups[key] = []
+                duplicate_groups[key].append(i)
+                
+        # Ensure all duplicates are included or excluded together
+        for group in duplicate_groups.values():
+            if any(genome[i] == 1 for i in group):
+                for i in group:
+                    genome[i] = 1  # Include all duplicates in the group
+            else:
+                for i in group:
+                    genome[i] = 0  # Exclude all duplicates in the group
+            
+            
+        reduced_reactions = [reaction for i, reaction in enumerate(reactions) if genome[i] == 1]
+        if len(reduced_reactions) < 50:  # Arbitrary threshold
+                raise ValueError("Reduced mechanism has too few reactions")
         #This part of the code collects all species that are involved in the reduced mechanism's reactions.
         # Check for species usage
-        species_used = set()
-        for reaction in reduced_reactions:
-            species_used.update(reaction.reactants.keys())
-            species_used.update(reaction.products.keys())
-        #print(f"Species used in reduced reactions: {species_used}")
-        reduced_species = [sp for sp in gas.species() if sp.name in species_used]
+        
+        if keep_all_species:
+            reduced_species = gas.species()
+            print("Keeping all species intact in the reduced mechanism")
+        else:
+            species_used = set()
+            for reaction in reduced_reactions:
+                species_used.update(reaction.reactants.keys())
+                species_used.update(reaction.products.keys())
+                
+            fuel_species = condition['fuel'].keys()
+            oxidizer_species = condition['oxidizer'].keys()
+            species_used.update(fuel_species)
+            species_used.update(oxidizer_species)
+            #print(f"Species used in reduced reactions: {species_used}")
+            reduced_species = [sp for sp in gas.species() if sp.name in species_used]
         #print(f"Species used in reduced reactions: {reduced_species}")
         reduced_mech = ct.Solution(
             thermo="IdealGas",
@@ -96,87 +120,121 @@ class FitnessEvaluator:
             file_path = f"reduced_mech_{len(reduced_reactions)}_rxns.yaml"
             reduced_mech.write_yaml(file_path)
             print(f"Reduced mechanism written to {file_path}")
-        
+        else:
+            file_path = " "
         # Print summary of the reduced mechanism
         print(f"Reduced mechanism created with {len(reduced_reactions)} reactions and {len(reduced_mech.species_names)} species.")
         
-        return reduced_mech
+        return reduced_mech, file_path
     
 
     
     def evaluate_fitness(self, genome, generation):
-        """
-        Evaluate the fitness of a genome by running a simulation with the reduced mechanism.
-
-        Parameters:
-            genome (list): Binary genome representing active reactions.
-            generation (int): Current generation number (used for saving results).
-
-        Returns:
-            float: Fitness score (lower is better).
-        """
+      
         try:
             # Step 1: Create the reduced mechanism
-            reduced_mech = self.create_reduced_mechanism(genome)
             
-            try:
-                T = self.condition['temperature']
-                P = self.condition['pressure']
-                X = {**self.condition['fuel'], **self.condition['oxidizer']}
-                
-                reduced_mech.TPX = T, P, X
-                reduced_mech()               
-            except Exception as e:
-                print(f"Mechanism validation failed: {str(e)}")
-                print(f"Failed condition: T={T}, P={P}, X={X}")
-                return float('inf'), None
+            total_fitness = {
+                "combined_fitness": 0.0,
+                "temperature_fitness": 0.0,
+                "species_fitness": 0.0,
+                "ignition_delay_fitness": 0.0,
+                "reaction_count_fitness": 0.0
+            }
+            num_conditions = len(self.conditions)
+            reduced_results ={}
+            
+            for idx, condition in enumerate (self.conditions):
+                try:
+                    print(f"Type of condition: {type(condition)}, Value: {condition}")
+                    
+                    reduced_mech, reduced_file_path = self.create_reduced_mechanism(
+                                                        genome, 
+                                                        write_to_file=False,
+                                                        keep_all_species=False, 
+                                                        condition =condition)
+                    
+                    T = condition['temperature']
+                    P = condition['pressure']
+                    X = {**condition['fuel'], **condition['oxidizer']}
+                    
+                    reduced_mech.TPX = T, P, X
+                    # reduced_mech()               
+                except Exception as e:
+                    print(f"Mechanism validation failed: {str(e)}")
+                    print(f"Failed condition: T={T}, P={P}, X={X}")
+                    return float('inf'), None
+                #reduced_mech()
 
-            runner = SimulationRunner(reduced_mech, self.reactor_type)
-            reduced_results = runner.run_simulation(self.condition) 
-            print("Run simulation was called succesfully")
-            
-            try:
-                reduced_results["species_names"] = reduced_mech.species_names
-                species_reduced = reduced_mech.species_names
-                print(len(species_reduced), ": " , species_reduced)
+                runner = SimulationRunner(reduced_mech, self.reactor_type)
+    
                 
-                mole_fractions = {species: reduced_results["mole_fractions"][i] for i, species in enumerate(reduced_results["species_names"])}
-                reduced_results["mole_fractions"] = mole_fractions
-            except Exception as e:
-                print(f"Error in evaluating reduced mechanism species: {e}")
-            
-            # Step 4: Run simulation with full mechanism
-            
-            full_results = self.full_runner.run_simulation(self.condition)
-            key_species = ['CH4', 'O2', 'CO2', 'H2O', 'CO', 'H2', 'O', 'OH', 'H', 'CH3']
-            
-            # Step 4: Calculate fitness
-            print("About to call fitness calcualtion")
-            epsilon=0
-            fitness = self.fitness_calculator.combined_fitness(
-                reduced_results,
-                full_results,
-                key_species,
-                self.weights
-            )
-            
-            print(f"Fitness Score for Generation {generation}: {fitness}")
-            return fitness, reduced_results
+                reduced_results = runner.run_simulation(condition) 
+                print("Run simulation was called succesfully")
+                
+                ignition_delay = idt_value(
+                    reduced_mech,
+                    condition,
+                    soln=False
+                )
+                
+                print(f"Ignition delay time for reduced mech: {ignition_delay} ms")
+                reduced_results["ignition_delay"] = ignition_delay
+                try:
+                    reduced_results["species_names"] = reduced_mech.species_names
+                    species_reduced = reduced_mech.species_names
+                    print(len(species_reduced), ": " , species_reduced)
+                    
+                    mole_fractions = {species: reduced_results["mole_fractions"][i] for i, species in enumerate(reduced_results["species_names"])}
+                    reduced_results["mole_fractions"] = mole_fractions
+                except Exception as e:
+                    print(f"Error in evaluating reduced mechanism species: {e}")
+                
+                # Step 4: Run simulation with full mechanism
+                if not hasattr(self, "full_results_cache"):
+                    self.full_results_cache = {}
+    
+                if idx not in self.full_results_cache:
+                    print(f"Running full mechanism simulation for condition {idx}...")
+                    self.full_results_cache[idx] = self.full_mech.run_simulation(condition)
+                    ignition_delay_full = idt_value(
+                        self.mech,
+                        condition,
+                        soln=True
+                    )
+                    self.full_results_cache[idx]["ignition_delay"] = ignition_delay_full
+                    print(f"Ignition delay time (IDT) for full mechanism (condition {idx}): {ignition_delay_full} ms")
+                else:
+                    print(f"Using cached results for full mechanism simulation (condition {idx})...")
+                
+                full_results = self.full_results_cache[idx]
+                   
+                fitness = self.fitness_calculator.combined_fitness(
+                    reduced_results, full_results, 
+                    self.key_species, sum(genome), self.genome_length)
+                
+                for key in total_fitness: 
+                    total_fitness[key] += fitness[key]
+
+
+            for key in total_fitness:
+                total_fitness[key] /= num_conditions
+
+            return total_fitness, reduced_results
+        
         
         except Exception as e:
-            print(f"Error during fitness evaluation for genome : {e}") #!!!!!!!!!!!!!!!!!!
-            return 1e6, None  # Penalize invalid solutions
+            print(f"Error during fitness evaluation for genome : {e}") 
+            return {
+            "combined_fitness": float("inf"),
+            "temperature_fitness": float("inf"),
+            "species_fitness": float("inf"),
+            "ignition_delay_fitness": float("inf"),
+            "reaction_count_fitness": float("inf")
+        }, None
 
     def run_generation(self, population, generation, save_top_n):
         """
-        Run a single generation of the genetic algorithm.
-
-        Parameters:
-            population (list): List of genomes in the current generation.
-            generation (int): Current generation number.
-            filename (str): Filename for saving mole fractions.
-            species_filename (str): Filename for saving species concentrations.
-
         Returns:
             list: Fitness scores of the current generation.
         """
@@ -188,34 +246,47 @@ class FitnessEvaluator:
         fitness_scores = []
         all_results = []
         reaction_counts = []
+        fitness_data = []
+        genome_runtimes = []
         species_usage = {}
         # Access the individuals array from the Population object
         individuals = population.individuals # gets array of population
         print(f"Processing {len(individuals)} individuals in generation {generation}")
-
+      
+            
         for i, genome in enumerate(individuals): #goes through all the genomes(individuals)
-            fitness, results = self.evaluate_fitness(genome, generation)
+            start_time = time.time()
+            fitness, reduced_results = self.evaluate_fitness(genome, generation)
+            reaction_count = sum(genome)
+            print("About to call fitness calcualtion")
             
-            fitness_scores.append(fitness)
+                      
+            fitness_data.append(fitness)    
+           
+            fitness_scores.append(fitness["combined_fitness"])
+            print(f"Combined Fitness: {fitness["combined_fitness"]}")
+            
             print(f"Genome Number: {len(fitness_scores)}")
+            print(f"Fitness for generation {generation} genome number {len(fitness_scores)}: {fitness}")
             
-            if results is not None:
+            if reduced_results is not None:
                 #count active reactions
-                reaction_count = sum(genome)
                 reaction_counts.append(reaction_count)
                 print(f"Length of reaction_counts: {len(reaction_counts)}")
                 
-                max_temp = results.get("max_temperature", 0)
+                max_temp = reduced_results.get("max_temperature", 0)
              
                 result_entry= {
-                    "fitness": fitness,
+                    "fitness": fitness["combined_fitness"],
                     "reaction_count": reaction_count,
                     "max_temperature": max_temp,
                     "genome": genome.copy() if hasattr(genome, "copy") else list(genome),
                     "individual_index": i
                 }
                 all_results.append(result_entry)
-                
+        
+        genome_runtime = time.time() - start_time
+        genome_runtimes.append(genome_runtime)       
         # Sort results bby fitness
         all_results.sort(key=lambda x: x["fitness"])   
         
@@ -226,9 +297,12 @@ class FitnessEvaluator:
         std_fitness = np.std(fitness_scores) if len(fitness_scores) > 1 else 0
 
         avg_reactions = sum(reaction_counts) / len(reaction_counts) if reaction_counts else 0
-        min_reactions = min(reaction_counts) if reaction_counts else 0
+        # min_reactions = min(reaction_counts) if reaction_counts else 0
         max_reactions = max(reaction_counts) if reaction_counts else 0      
-        
+        if fitness_scores:
+            min_fitness_index = np.argmin(fitness_scores)  # Index of the genome with the minimum fitness
+            min_fitness_genome = individuals[min_fitness_index]  # Genome with the minimum fitness
+            min_reactions = sum(min_fitness_genome)  # Reaction count for the genome with the minimum fitness
         # Save detailed results for top performers
         top_n_results = all_results[:save_top_n]
         #print(f"top n results: {top_n_results}")
@@ -246,17 +320,18 @@ class FitnessEvaluator:
                 save_mole_fractions_to_json(detailed_results, species_names, generation, filename)
                 
                 # Save mechanism details
-                with open(f"{base_dir}/rank_{rank+1}_mechanism_info.txt", 'w') as f:
-                    f.write(f"Fitness: {result['fitness']}\n")
-                    f.write(f"Reaction count: {result['reaction_count']}\n")
-                    f.write(f"Individual index: {individual_idx}\n")
+                with open(f"{base_dir}/rank_{rank+1}_mechanism_info.json", 'w') as f:
+                    json.dump({
+                                "Fitness": result["fitness"],
+                                "Reaction Count": result["reaction_count"],
+                                "Individual Index": individual_idx
+                            }, f, indent=4)
 
                     # Save active reaction indices
                     active_reactions = [i for i, active in enumerate(genome) if active]
-                    f.write(f"Active reaction indices: {active_reactions}\n")
-                    
-   
-        
+                    json.dump({ "Active reaction indices": active_reactions
+                                }, f, indent=4)
+    
         # Convert numpy types to Python types
         def convert_numpy_types(obj):
             if isinstance(obj, np.ndarray):
@@ -266,169 +341,15 @@ class FitnessEvaluator:
             elif isinstance(obj, (np.float64, np.float32)):
                 return float(obj)  # Convert numpy floats to Python float
             else:
-                raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
-        
-        # # Save generation statistics
-        # with open(f"{base_dir}/generation_stats.json", 'w') as f:
-        #     json.dump(generation_stats, f, indent=2, default=convert_numpy_types)
-            
-            # Plot fitness distribution
-        # if len(fitness_scores) > 1:
-        #     plt.figure(figsize=(10, 6))
-        #     plt.hist(fitness_scores, bins=20, alpha=0.7)
-        #     plt.title(f"Fitness Distribution - Generation {generation}")
-        #     plt.xlabel("Fitness Score")
-        #     plt.ylabel("Count")
-        #     plt.savefig(f"{base_dir}/fitness_distribution.png")
-        #     plt.close()
-
+                raise TypeError(f"Object of type {type(obj)} is not JSON serializable") 
           
         return {
             "fitness_scores": fitness_scores,
+            "fitness_data" : fitness_data,
+            "genome_runtimes": genome_runtimes,
             "best_genome": all_results[0]["genome"] if all_results else None,
             "best_fitness": min_fitness,
             "active_reactions": min_reactions,
             "average_reactions": avg_reactions
-    }
-                    
+    }       
 
-    def calculate_premix_fitness(self, species_reduced, reduced_results, epsilon):
-        total_error = 0.0
-        
-        # Create SimulationRunner instances for full and reduced mechanisms
-        full_runner = SimulationRunner('gri30.yaml', self.reactor_type)
-            
-        # Run simulations for this condition
-        full_profiles = full_runner.run_simulation(self.condition)
-       
-        reduced_profiles = reduced_results
-        #print(f"Full profiles for condition : {full_profiles}")
-        #print(f"Reduced profiles for condition : {reduced_profiles}")
-
-        if not isinstance(reduced_profiles, dict):
-            raise ValueError(f"Expected reduced_profiles to be a dictionary, got {type(reduced_profiles)}")
-        if not isinstance(full_profiles, dict):
-            raise ValueError(f"Expected full_profiles to be a dictionary, got {type(full_profiles)}")
-        
-        z = full_profiles['grid'] 
-        #is_uniform_grid = np.allclose(np.diff(z), np.diff(z).mean())
-        
-        condition_error = 0.0
-        for k, species in enumerate(species_reduced):
-            if species not in full_profiles or species not in reduced_profiles["mole_fractions"]:
-                continue
-            #print(f"Processing species: {species}")
-            Y_orig = full_profiles[species]
-            Y_calcd = reduced_profiles["mole_fractions"][species]
-            
-            # print(f"Species: {species}")
-            # print(f"Y_orig: {Y_orig}")
-            # print(f"Y_calcd: {Y_calcd}")
-            
-            # W_k = 1.0 if np.max(Y_orig) >= 1e-7 else 0.0
-            # if W_k == 0.0:
-            #     continue
-            W_k = 1.0
-            l2_orig = np.sqrt(np.trapezoid(Y_orig**2, z))
-            
-            diff = Y_calcd - Y_orig
-            l2_diff = np.sqrt(np.trapezoid(diff**2, z))
-            
-            if l2_orig > 0:
-                relative_error = W_k * l2_diff / l2_orig
-            else:
-                relative_error = 0 if l2_diff == 0 else W_k # handle edge cases
-                
-            # print(f"L2_orig: {l2_orig}, L2_diff: {l2_diff}")
-            # print(f"Relative error for {species}: {relative_error}")
-                
-            condition_error += relative_error
-            # print(f"Condition error: {condition_error}\n")
-        
-        total_error += condition_error
-                
-        return 1.0/(epsilon + total_error)
-
-
-    def calculate_psr_fitness(self, species_reduced, reduced_results, epsilon):
-            total_error = 0.0
-            
-            # Create SimulationRunner instances for full and reduced mechanisms
-            full_runner = SimulationRunner('gri30.yaml', self.reactor_type)
-                
-            # Run simulations for this condition
-            full_profiles = full_runner.run_simulation(self.condition)
-        
-            reduced_profiles = reduced_results
-            #print(f"Full profiles for condition : {full_profiles}")
-            #print(f"Reduced profiles for condition : {reduced_profiles}")
-            
-            if not isinstance(reduced_profiles, dict):
-                raise ValueError(f"Expected reduced_profiles to be a dictionary, got {type(reduced_profiles)}")
-            if not isinstance(full_profiles, dict):
-                raise ValueError(f"Expected full_profiles to be a dictionary, got {type(full_profiles)}")
-            
-            full_time = full_profiles['time'] # change to grid for PREMIX
-            print(f"Full time shape: {full_time.shape}, type: {type(full_time)}")
-            #is_uniform_grid = np.allclose(np.diff(z), np.diff(z).mean())
-            reduced_time = reduced_profiles['time']  # Time points for the reduced mechanism
-            print(f"Reduced time shape: {reduced_time.shape}, type: {type(reduced_time)}")
-            
-            # Truncate the reduced profile to match the full profile's time range
-            max_time = full_time[-1]  # Last time point of the full profile
-            valid_indices = reduced_time <= max_time  # Indices where reduced time is within the full time range
-            truncated_reduced_time = reduced_time[valid_indices]  # Truncated reduced time array
-            print(f"Truncated reduced time shape: {truncated_reduced_time.shape}")
-            
-            # Truncate mole fractions for reduced profiles
-            truncated_reduced_profiles = {}
-            for species in reduced_profiles["mole_fractions"]:
-                truncated_reduced_profiles[species] = reduced_profiles["mole_fractions"][species][valid_indices]
-            
-            # Interpolate the full profile to match the truncated reduced time array
-            interpolated_full_profiles = {}
-            for species in full_profiles:
-                if species == "time":  # Skip the time array
-                    continue
-                interpolated_full_profiles[species] = np.interp(
-                    truncated_reduced_time, full_time, full_profiles[species]
-                )
-                
-            condition_error = 0.0
-            for k, species in enumerate(species_reduced):
-                if species not in interpolated_full_profiles or species not in truncated_reduced_profiles:
-                    continue
-                #print(f"Processing species: {species}")
-                Y_orig = interpolated_full_profiles[species]
-                
-                Y_calcd = truncated_reduced_profiles[species]
-                print(f"Y_orig shape: {Y_orig.shape}, Y_calcd shape: {Y_calcd.shape}")
-                
-                # print(f"Species: {species}")
-                # print(f"Y_orig: {Y_orig}")
-                # print(f"Y_calcd: {Y_calcd}")
-                
-                # W_k = 1.0 if np.max(Y_orig) >= 1e-7 else 0.0
-                # if W_k == 0.0:
-                #     continue
-                W_k = 1.0
-                l2_orig = np.sqrt(np.trapezoid(Y_orig**2, truncated_reduced_time))
-                
-                diff = Y_calcd - Y_orig
-                l2_diff = np.sqrt(np.trapezoid(diff**2, truncated_reduced_time))
-                
-                if l2_orig > 0:
-                    relative_error = W_k * l2_diff / l2_orig
-                else:
-                    relative_error = 0 if l2_diff == 0 else W_k # handle edge cases
-                    
-                # print(f"L2_orig: {l2_orig}, L2_diff: {l2_diff}")
-                # print(f"Relative error for {species}: {relative_error}")
-                    
-                condition_error += relative_error
-                # print(f"Condition error: {condition_error}\n")
-            
-            total_error += condition_error
-                    
-            return 1.0/(epsilon + total_error)
-# ALL previous fitness functions are defined below

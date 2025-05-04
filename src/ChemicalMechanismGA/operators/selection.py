@@ -5,7 +5,7 @@ class Selection:
     @staticmethod
     def tournament_selection(fitness_scores):
         
-        indices = np.random.choice(len(fitness_scores), 2, replace = False)
+        indices = np.random.choice(len(fitness_scores), 5, replace = False)
         return indices[np.argmin(fitness_scores[indices])] # returns the indices of the selected positions
     
     

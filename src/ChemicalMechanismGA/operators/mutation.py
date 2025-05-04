@@ -1,16 +1,16 @@
 import numpy as np
 
 class Mutation:
-    def __init__(self, mutation_rate=0.1):
+    def __init__(self, mutation_rate):
         self.mutation_rate = mutation_rate
         
     def bit_flip_mutation(self, genome):
-        min_active_reactions = 50
+        #min_active_reactions = 50
         for i in range(len(genome)):
             if np.random.rand() < self.mutation_rate:
                 genome[i] = 1 - genome[i]
-        if sum(genome) < min_active_reactions:
-            genome[np.random.choice(len(genome))] = 1  # Reactivate a random reaction
+        # if sum(genome) < min_active_reactions:
+        #     genome[np.random.choice(len(genome))] = 1  # Reactivate a random reaction
         return genome
     
     def swap_pos_mutation(self, genome):

@@ -59,10 +59,10 @@ def idt_value(mech, condition,soln):
     diff_temp = np.diff(temp)/ np.diff(time)
 
     ign_pos = np.argmax( diff_temp )
-    ign = time[ign_pos]*1000 # convert to ms
+    ign = time[ign_pos] # convert to ms then *1000
     #print(ign) #in seconds
     # print("Ignition Delay is: {:.10f} ms".format(ign))
-    return ign #Returns the ignition delay time (IDT) as a single value
+    return ign *1000 #Returns the ignition delay time (IDT) as a single value
 
 
 # condition = {
