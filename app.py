@@ -182,27 +182,27 @@ class GeneticAlgorithmGUI:
         
         # Add OptionMenu for Reactor Type
         ttk.Label(self.main_frame, text="Reactor Type").grid(row=row, column=0, sticky=tk.W, pady=2)
-        reactor_options = ["constant_pressure", "premixed_flame"]
+        reactor_options = ["constant_pressure"]
         self.reactor_menu = ttk.OptionMenu(self.main_frame, self.config_vars["reactor_type"], self.config_vars["reactor_type"].get(), *reactor_options)
         self.reactor_menu.grid(row=row, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=2)
         row += 1
         
         # Add OptionMenu for Difference Function
         ttk.Label(self.main_frame, text="Difference Function").grid(row=row, column=0, sticky=tk.W, pady=2)
-        diff_options = ["squared", "absolute"]
+        diff_options = ["absolute", "squared"]
         self.diff_menu = ttk.OptionMenu(self.main_frame, self.config_vars["difference_function"], self.config_vars["difference_function"].get(), *diff_options)
         self.diff_menu.grid(row=row, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=2)
         row += 1
         
         # Add OptionMenu for Normalization Method
         ttk.Label(self.main_frame, text="Normalization Method").grid(row=row, column=0, sticky=tk.W, pady=2)
-        norm_options = ["sigmoid", "linear"]
+        norm_options = ["sigmoid", "logarithmic"]
         self.norm_menu = ttk.OptionMenu(self.main_frame, self.config_vars["normalization_method"], self.config_vars["normalization_method"].get(), *norm_options)
         self.norm_menu.grid(row=row, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=2)
         row += 1
         
         for key, var in self.config_vars.items():
-            if key in ["species_weights_input", "weights_method", "elitism_enabled", "deactivation_chance", "init_with_reduced_mech", "elite_size", "reduction_threshold"]:
+            if key in ["species_weights_input", "weights_method", "elitism_enabled", "deactivation_chance", "init_with_reduced_mech", "elite_size", "reduction_threshold", "reactor_type", "difference_function", "normalization_method"]:
                 continue
             label_text = key.replace("_", " ").title()
             ttk.Label(self.main_frame, text=label_text).grid(row=row, column=0, sticky=tk.W, pady=2)
