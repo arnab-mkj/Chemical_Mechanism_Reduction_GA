@@ -36,7 +36,7 @@
 - **Testing capabilities** for individual GA components (mutation, crossover, fitness evaluation, etc.)
 - **Visualization tools** for comparing reduced and detailed mechanisms
 
-# Installation
+
 
 # Prerequisites
 
@@ -47,8 +47,8 @@
 
 1. **Clone the repository**:
  ```bash
-    git clone https://github.com/arnab-mkj/Chemical_Mechanism_Reduction_GA.git\
-   cd Chemical_Mechanism_Reduction_GA
+  git clone https://github.com/arnab-mkj/Chemical_Mechanism_Reduction_GA.git\
+  cd Chemical_Mechanism_Reduction_GA
  ```
 2. **Create a virtual environment**:
  ```bash
@@ -56,17 +56,17 @@
  ```
 3. **Activate the virtual environment**:
 
-   - Windows:
-     ```bash
-      .\venv\Scripts\activate
-      ```
-    - Unix/macOS:
-    ```bash
-      source venv/bin/activate
-    ```
+  - Windows:
+  ```bash
+    .\venv\Scripts\activate
+  ```
+  - Unix/macOS:
+  ```bash
+    source venv/bin/activate
+  ```
 4. **Install dependencies**:
   ```bash
-   pip install --upgrade pip\ -->
+   pip install --upgrade pip
    pip install -r requirements.txt
   ```
 5. **Launch the application**:
@@ -75,11 +75,11 @@
    ```
 # Usage
 
-# The GUI is divided into several tabs for different functionalities:
+#### The GUI is divided into several tabs for different functionalities:
 
-# Configuration Tab
+#### Configuration Tab
 
-# This tab allows you to set up the genetic algorithm parameters for mechanism reduction:
+### This tab allows you to set up the genetic algorithm parameters for mechanism reduction:
 
 - **Population Size**: Number of candidate solutions per generation (default: 50)
 - **Original Mechanism Path**: Path to the detailed mechanism file (e.g., GRI-Mech 3.0)
@@ -94,23 +94,23 @@
 - **Conditions**: JSON-formatted operating conditions for mechanism evaluation
 - **Run Genetic Algorithm**: Button to start the reduction process
 
-# Tests Tab
+## Tests Tab
 
-# This tab allows you to validate individual components of the genetic algorithm:
+### This tab allows you to validate individual components of the genetic algorithm:
 
 - **Select Test to Run**: Dropdown menu with options like mutation, fitness, crossover, selection, initialization
 - **Test Parameters**: Fields specific to the selected test
 - **Run Test**: Button to execute the selected test
 
-# Reactor Tabs
+## Reactor Tabs
 
 We will need a existing reduced mechanism to run compare with the full mechanism for this. It is recommended to run the reduction process under user-specified conditions to get a reduced mehanism and then come to the below tests.
 
 However, a reduced mech with 64 reactionand 29 species have been added for easy working.
 
-# Flame Simulation Tab
+## Flame Simulation Tab
 
-# Simulate and compare reduced vs. full mechanisms in a laminar flame:
+### Simulate and compare reduced vs. full mechanisms in a laminar flame:
 
 - **Reactor Type**: Choose between Laminar Flame Reactor or Constant Pressure Reactor
 - **Equivalence Ratio (phi)**: Fuel-oxidizer mixture ratio (default: 2.0)
@@ -119,30 +119,30 @@ However, a reduced mech with 64 reactionand 29 species have been added for easy 
 - **Fuel**: Fuel species (default: CH4)
 - **Oxidizer**: Oxidizer composition (default: O2:0.21, N2:0.79)
 - **Mass Flow Rate**: For Laminar Flame Reactor (default: 0.04 kg/m²/s)
-- **Reduced Mechanism File**: Path to the reduced mechanism
+- **Reduced Mechanism File**: Path to the reduced mechanism(if you are using this for the first time without previous mechanism reduction, use the **"reduced_mech_64_rxns.yaml"** file to work on)
 - **Full Mechanism Name**: Name of the full mechanism (default: gri30.yaml)
 
-# Results include burning velocities, maximum temperatures, and plots of temperature profiles, species mole fractions, and heat release rates.
+ Results include burning velocities, maximum temperatures, and plots of temperature profiles, species mole fractions, and heat release rates.
 
-# Constant Pressure Simulation Tab
 
 # Simulate and compare mechanisms in a Constant Pressure Reactor:
 
 - **Temperature (K)**: Initial temperature (default: 2561)
-- **Pressure (Pa)**: Initial pressure (default: 101325)
+- **Pressure (Pa)**: Initial pressure (default: 101325 or, 1 atm)
 - **Equivalence Ratios**: JSON list of ratios to simulate (default: \[0.4\])
 - **Fuel**: Fuel species (default: CH4)
 - **Oxidizer**: Oxidizer composition (default: O2:0.21, N2:0.79)
-- **End Time (s)**: Simulation duration (default: 0.1)
+- **End Time (s)**: Simulation duration (default: 0.1 s)
 - **Key Species**: JSON list of species to track (default: \["CH4", "O2", "CO2", "CO", "OH"\])
-- **Reduced Mechanism File**: Path to the reduced mechanism
-- **Full Mechanism Name**: Name of the full mechanism (default: gri30.yaml)
+- **Reduced Mechanism File**: Path to the reduced mechanism (if you are using this for the first time without previous mechanism reduction, use the **"reduced_mech_64_rxns.yaml"** file to work on)
+- **Full Mechanism Name**: Name of the full mechanism (default: gri30.yaml). Cantera will automatically run the full mechanism with the provided name.
 - **Output Directory**: Where to save simulation plots
-- **X-Axis Limit (ms)**: Maximum time to display on plots (default: 0.1)
+- **X-Axis Limit (ms)**: Maximum time to display on plots (default: 0.1). Adjust accordingly: low initial temperature might take much time to reach ignition point whereas high pressure reactor can push to the ignition point much faster.
 
-# Results include ignition delay times, maximum temperatures, and plots of temperature and species evolution for each equivalence ratio.
 
-# Method Description
+
+Results include ignition delay times, maximum temperatures, and plots of temperature and species evolution for each equivalence ratio.
+
 
 # The genetic algorithm approach for mechanism reduction works as follows:
 
@@ -158,7 +158,7 @@ However, a reduced mech with 64 reactionand 29 species have been added for easy 
 - Accuracy in predicting ignition delay time
 - Accuracy in predicting steady-state temperature
 - Number of reactions in the reduced mechanism
-- Computational time required for solution
+- Accuracy in predicting mole-fraction evolution
 
 # Common Workflows
 
@@ -175,15 +175,15 @@ However, a reduced mech with 64 reactionand 29 species have been added for easy 
 # Testing GA Components
 
 1. Switch to the **Tests** tab
-2. Select a test type (e.g., "fitness")
+2. Select a test type (e.g., "mutation")
 3. Set appropriate parameters
 4. Click **Run Test**
 5. Check results in the output text box
 
-# Validating Reduced Mechanisms
+# Running Reduced Mechanisms
 
 1. Go to the **Flame Simulation** or **Constant Pressure Simulation** tab
-2. Set the path to your reduced mechanism
+2. Set the path to your reduced mechanism(if you are using this for the first time without previous mechanism reduction, use the **"reduced_mech_64_rxns.yaml"** file to work on)
 3. Configure simulation parameters
 4. Run the simulation
 5. Compare results between reduced and full mechanisms
@@ -202,10 +202,10 @@ However, a reduced mech with 64 reactionand 29 species have been added for easy 
 - **Check error messages**: Read carefully to identify and fix issues
 - **Experiment safely**: Start with defaults, then change one parameter at a time
 - **Use the output text**: It provides valuable information about the process and results
-- **Terminal output**: Some print statements appear in the terminal rather than the GUI content here. You can paste directly from Word or other rich text sources.
+- **Terminal output**: Some print statements appear in the terminal rather than the GUI content here.
 
 # References
 
-- GRI-Mech 3.0 Documentation
-- Cantera Documentation
-- Genetic Algorithms in Optimization
+
+- [GRI-Mech 3.0 Documentation](http://combustion.berkeley.edu/gri-mech/version30/text30.html)
+- [Cantera](https://cantera.org/stable/userguide/index.html)
