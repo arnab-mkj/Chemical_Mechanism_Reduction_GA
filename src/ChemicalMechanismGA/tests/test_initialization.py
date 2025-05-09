@@ -86,6 +86,7 @@ def run_test(diversity_prob, remove_reactions):
     plt.colorbar(label="Reaction State (1=Active, 0=Inactive)")
 
     plt.tight_layout()
+    plt.show()
     plt.savefig("initialization_results.png")
     plt.close()
 

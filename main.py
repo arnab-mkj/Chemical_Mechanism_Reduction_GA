@@ -63,7 +63,7 @@ def main():
         elite_size,
         fitness_evaluator,
         key_species, 
-        difference_function
+        difference_function,
     )
 
     # Step 6: Run the Genetic Algorithm

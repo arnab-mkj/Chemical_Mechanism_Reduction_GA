@@ -48,3 +48,9 @@ research/sensitivity.ipynb
 src/ChemicalMechanismGA/components/__pycache__/genetic_algorithm.cpython-312.pyc
 src/ChemicalMechanismGA/components/__pycache__/population.cpython-312.pyc
 src/ChemicalMechanismGA/operators/__pycache__/mutation.cpython-312.pyc
+best_genome.json
+conditions.json
+crossover_results.csv
+outputs
+output_gui
+.idea

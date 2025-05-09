@@ -1,0 +1,148 @@
+import cantera as ct
+import numpy as np
+import matplotlib.pyplot as plt
+
+class IDTComparison:
+    def __init__(self, reduced_mech, full_mech):
+        self.reduced_mech = reduced_mech
+        self.full_mech = full_mech
+
+    def calculate_idt(self, mechanism, condition):
+        """Calculate IDT for a given mechanism and condition."""
+        try:
+            gas = ct.Solution(mechanism)
+            gas.TP = condition["temperature"], condition["pressure"]
+            gas.set_equivalence_ratio(condition["phi"], condition["fuel"], condition["oxidizer"])
+
+            # Reactor setup
+            reactor = ct.IdealGasConstPressureReactor(gas)
+            sim = ct.ReactorNet([reactor])
+
+            # Time evolution
+            time = []
+            temperature = []
+
+            t = 0.0
+            while t < condition["end_time"]:
+                t = sim.step()
+                time.append(t)
+                temperature.append(reactor.T)
+
+            # Calculate IDT based on the maximum temperature gradient
+            time = np.array(time)
+            temperature = np.array(temperature)
+            dT_dt = np.gradient(temperature, time)
+            idt_index = np.argmax(dT_dt)
+            return time[idt_index]
+
+        except Exception as e:
+            print(f"Error in IDT calculation for {mechanism}: {e}")
+            return None
+
+    def plot_idt_vs_temperature(self, conditions, temperature_range, equivalence_ratios=None, pressures=None):
+        """Plot IDT vs. temperature for different equivalence ratios or pressures."""
+        if equivalence_ratios:
+            self.plot_idt_vs_temperature_eq_ratios(conditions, temperature_range, equivalence_ratios)
+        if pressures:
+            self.plot_idt_vs_temperature_pressures(conditions, temperature_range, pressures)
+
+    def plot_idt_vs_temperature_eq_ratios(self, conditions, temperature_range, equivalence_ratios):
+        """Plot IDT vs. temperature for different equivalence ratios."""
+        plt.figure(figsize=(10, 6))
+
+        for phi in equivalence_ratios:
+            reduced_idts = []
+            full_idts = []
+
+            for temp in temperature_range:
+                condition = {
+                    "temperature": temp,
+                    "pressure": conditions["pressure"],
+                    "phi": phi,
+                    "fuel": conditions["fuel"],
+                    "oxidizer": conditions["oxidizer"],
+                    "end_time": conditions["end_time"],
+                }
+
+                # Calculate IDT for reduced and full mechanisms
+                reduced_idt = self.calculate_idt(self.reduced_mech, condition)
+                full_idt = self.calculate_idt(self.full_mech, condition)
+
+                reduced_idts.append(reduced_idt)
+                full_idts.append(full_idt)
+
+            # Plot for this equivalence ratio
+            plt.plot(temperature_range, reduced_idts, label=f"Reduced (phi={phi})", linestyle="--", marker="o")
+            plt.plot(temperature_range, full_idts, label=f"Full (phi={phi})", linestyle="-", marker="s")
+
+        plt.xlabel("Temperature (K)")
+        plt.ylabel("Ignition Delay Time (s)")
+        plt.title("IDT vs. Temperature for Different Equivalence Ratios")
+        plt.yscale("log")  # Log scale for IDT
+        plt.legend()
+        plt.grid()
+        plt.show()
+
+    def plot_idt_vs_temperature_pressures(self, conditions, temperature_range, pressures):
+        """Plot IDT vs. temperature for different pressures."""
+        plt.figure(figsize=(10, 6))
+
+        for pressure in pressures:
+            reduced_idts = []
+            full_idts = []
+
+            for temp in temperature_range:
+                condition = {
+                    "temperature": temp,
+                    "pressure": pressure,
+                    "phi": conditions["phi"],
+                    "fuel": conditions["fuel"],
+                    "oxidizer": conditions["oxidizer"],
+                    "end_time": conditions["end_time"],
+                }
+
+                # Calculate IDT for reduced and full mechanisms
+                reduced_idt = self.calculate_idt(self.reduced_mech, condition)
+                full_idt = self.calculate_idt(self.full_mech, condition)
+
+                reduced_idts.append(reduced_idt)
+                full_idts.append(full_idt)
+
+            # Plot for this pressure
+            plt.plot(temperature_range, reduced_idts, label=f"Reduced (P={pressure/101325:.1f} atm)", linestyle="--", marker="o")
+            plt.plot(temperature_range, full_idts, label=f"Full (P={pressure/101325:.1f} atm)", linestyle="-", marker="s")
+
+        plt.xlabel("Temperature (K)")
+        plt.ylabel("Ignition Delay Time (s)")
+        plt.title("IDT vs. Temperature for Different Pressures")
+        plt.yscale("log")  # Log scale for IDT
+        plt.legend()
+        plt.grid()
+        plt.show()
+
+
+# Example Usage
+if __name__ == "__main__":
+    # Define conditions
+    conditions = {
+        "phi": 1.0,  # Default equivalence ratio
+        "pressure": ct.one_atm,  # Default pressure in Pa
+        "fuel": "CH4",  # Fuel
+        "oxidizer": {"O2": 0.21, "N2": 0.79},  # Oxidizer composition
+        "end_time": 0.01,  # End time for the simulation in seconds
+    }
+
+    # Define temperature range
+    temperature_range = np.linspace(800, 2000, 10)  # Temperatures from 800 K to 2000 K
+
+    # Define equivalence ratios and pressures
+    equivalence_ratios = [0.8, 1.0, 1.2]
+    pressures = [ct.one_atm, 2 * ct.one_atm, 5 * ct.one_atm]  # 1 atm, 2 atm, 5 atm
+
+    # Mechanism files
+    reduced_mech = "E:/PPP_WS2024-25/ChemicalMechanismReduction/outputs/Run_5/reduced_mech_58_rxns.yaml"
+    full_mech = "gri30.yaml"
+
+    # Initialize and run comparison
+    comparison = IDTComparison(reduced_mech, full_mech)
+    comparison.plot_idt_vs_temperature(conditions, temperature_range, equivalence_ratios=equivalence_ratios, pressures=pressures)

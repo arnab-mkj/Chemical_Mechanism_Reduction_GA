@@ -645,6 +645,10 @@ class GeneticAlgorithmGUI:
             save_genome_as_yaml(best_genome, mechanism_path, output_path)
             output += f"Best reduced mechanism saved to: {output_path}\n"
             
+            # fitness_history_converted = {
+            #     gen: {k: float(v) if isinstance(v, np.integer) else v for k, v in values.items()}
+            #     for gen, values in ga.fitness_history.items()
+            # }
             fitness_history_path = f"{config['output_directory']}/{config['difference_function']}/fitness_history.json"
             with open(fitness_history_path, "w") as file:
                 json.dump(ga.fitness_history, file, indent=4)
