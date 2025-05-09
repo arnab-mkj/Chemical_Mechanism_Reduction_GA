@@ -76,7 +76,6 @@ def save_species_concentrations(results, species_names, generation, filename="sp
     """
     
     try:
-        filename = "E:/PPP_WS2024-25/ChemicalMechanismReduction/data/output/mole_fractions.json"
         # Ensure the directory for the file exists
         print(f"Saving species concentrations to: {filename}")
         try:

@@ -83,7 +83,8 @@ class SimulationRunner:
             time = 0.0
             end_time = 0.05  # 50ms simulation time
             time_step = 1e-5  # 0.01ms fixed time step
-            time_points = np.arange(0, end_time + time_step, time_step)
+            # Create time points so that both full and reduced mechanism can be computed at same time points
+            time_points = np.arange(0, end_time + time_step, time_step) 
             
             # Initialize data storage
             time_history = {

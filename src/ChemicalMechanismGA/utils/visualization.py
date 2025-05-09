@@ -51,14 +51,14 @@ class RealTimePlotter:
         self.min_reactions.append(stats["current_fitness_reactions"])  # Append the minimum number of reactions
         self.mean_reactions.append(stats["active_reactions_mean"])  # Append the mean number of reactions
         self.best_fitness.append(stats["total_best_fitness"])  # Append the best fitness value
-        self.mean_fitness.append(stats["mean_fitness"])
+        self.mean_fitness.append(stats["mean_fitness"]) # Append the mean fitness value
       
 
         # Append fitness contributions
         self.temperature_fitness.append(stats["temperature_fitness_min"])
         self.species_fitness.append(stats["species_fitness_min"])
         self.idt_fitness.append(stats["ignition_delay_fitness_min"])
-        self.reaction_fitness.append(stats["reaction_fitness_min"])  # Assuming reaction fitness is related to min_reactions
+        self.reaction_fitness.append(stats["reaction_fitness_min"])  # reaction fitness is related to min_reactions
 
         # Update reaction plot
         self.reaction_line.set_data(self.generations, self.min_reactions)

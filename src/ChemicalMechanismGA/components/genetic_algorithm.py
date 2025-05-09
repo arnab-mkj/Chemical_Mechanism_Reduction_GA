@@ -84,6 +84,7 @@ class GeneticAlgorithm:
             
             # Evaluate current population fitness
             save_top_n = 3  # Number of top performers to save
+            # Runs the current generation with the current population
             result = self.fitness_evaluator.run_generation(
                 self.population, 
                 self.current_generation, 

@@ -53,12 +53,11 @@ class FitnessEvaluator:
             raise ValueError(f"Unsupported reactor type: {reactor_type}")
         
         #self.target_delay = target_delay
-        
 
     def create_reduced_mechanism(self, genome, write_to_file, keep_all_species, condition): # to false
             
         gas = ct.Solution(self.mech)
-        reactions = gas.reactions() #gets reaactions from full mech
+        reactions = gas.reactions() # gets reactions from full mech
         
         #print(reduced_reactions)
         # Identify duplicate reactions
@@ -101,7 +100,8 @@ class FitnessEvaluator:
             species_used.update(oxidizer_species)
             #print(f"Species used in reduced reactions: {species_used}")
             reduced_species = [sp for sp in gas.species() if sp.name in species_used]
-        #print(f"Species used in reduced reactions: {reduced_species}")
+   
+        # Creating a Solution object for the reduced mechanism
         reduced_mech = ct.Solution(
             thermo="IdealGas",
             kinetics="GasKinetics",
@@ -116,7 +116,8 @@ class FitnessEvaluator:
             for sp in reaction_species:
                 if sp not in reduced_mech.species_names:
                     raise ValueError(f"Invalid mechanism: Reaction {reaction.equation} references missing species {sp}.")
-       
+        
+        # Check to see the write to file for each genome
         if write_to_file:
             file_path = f"reduced_mech_{len(reduced_reactions)}_rxns.yaml"
             reduced_mech.write_yaml(file_path)
@@ -133,7 +134,7 @@ class FitnessEvaluator:
     def evaluate_fitness(self, genome, generation):
       
         try:
-            # Step 1: Create the reduced mechanism
+            # Create the reduced mechanism
             
             total_fitness = {
                 "combined_fitness": 0.0,
@@ -159,28 +160,30 @@ class FitnessEvaluator:
                     P = condition['pressure']
                     X = {**condition['fuel'], **condition['oxidizer']}
                     
-                    reduced_mech.TPX = T, P, X
+                    reduced_mech.TPX = T, P, X 
                     # reduced_mech()               
                 except Exception as e:
                     print(f"Mechanism validation failed: {str(e)}")
                     print(f"Failed condition: T={T}, P={P}, X={X}")
                     return float('inf'), None
-                #reduced_mech()
+              
 
                 runner = SimulationRunner(reduced_mech, self.reactor_type)
     
-                
+                # Run the Cantera simulation for the reactor chosen for the mechanism
                 reduced_results = runner.run_simulation(condition) 
                 print("Run simulation was called succesfully")
                 
+                # calculates the ignition delay time for the reduced mechanism
                 ignition_delay = idt_value(
                     reduced_mech,
                     condition,
                     soln=False
                 )
-                
                 print(f"Ignition delay time for reduced mech: {ignition_delay} ms")
                 reduced_results["ignition_delay"] = ignition_delay
+                
+                # Gets the mole fractions of all the species
                 try:
                     reduced_results["species_names"] = reduced_mech.species_names
                     species_reduced = reduced_mech.species_names
@@ -191,12 +194,13 @@ class FitnessEvaluator:
                 except Exception as e:
                     print(f"Error in evaluating reduced mechanism species: {e}")
                 
-                # Step 4: Run simulation with full mechanism
+                # Run simulation with full mechanism, runs only once and stores in cache to prevent multiple runs of the same mech
                 if not hasattr(self, "full_results_cache"):
                     self.full_results_cache = {}
     
                 if idx not in self.full_results_cache:
                     print(f"Running full mechanism simulation for condition {idx}...")
+                    # Run the simulation with the full mechanism
                     self.full_results_cache[idx] = self.full_mech.run_simulation(condition)
                     ignition_delay_full = idt_value(
                         self.mech,
@@ -209,7 +213,8 @@ class FitnessEvaluator:
                     print(f"Using cached results for full mechanism simulation (condition {idx})...")
                 
                 full_results = self.full_results_cache[idx]
-                   
+                
+                # Calculates the error function(fitness functions) by passing both the reduced and the full mechanism   
                 fitness = self.fitness_calculator.combined_fitness(
                     reduced_results, full_results, 
                     self.key_species, sum(genome), self.genome_length)
@@ -217,9 +222,8 @@ class FitnessEvaluator:
                 for key in total_fitness: 
                     total_fitness[key] += fitness[key]
 
-
             for key in total_fitness:
-                total_fitness[key] /= num_conditions
+                total_fitness[key] /= num_conditions # If multiple conditions passed initially, then take the average of them
 
             return total_fitness, reduced_results
         
@@ -260,7 +264,6 @@ class FitnessEvaluator:
             fitness, reduced_results = self.evaluate_fitness(genome, generation)
             reaction_count = sum(genome)
             print("About to call fitness calcualtion")
-            
                       
             fitness_data.append(fitness)    
            
